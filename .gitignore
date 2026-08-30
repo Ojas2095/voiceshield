@@ -1,0 +1,40 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables (never commit secrets)
+.env
+
+# Model weights (too large for git — share via Drive/USB)
+ai/models/*.pt
+ai/models/*.bin
+ai/models/*.safetensors
+ai/models/*.onnx
+
+# Signing keys
+keys/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Database files
+*.db
+*.sqlite3

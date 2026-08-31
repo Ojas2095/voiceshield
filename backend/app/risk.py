@@ -49,11 +49,7 @@ async def on_detection(call_id: str, detection_payload: dict) -> None:
     """
     Integration Seam Hook:
     Fired on every processed window's evaluation (flagged or unflagged).
-    
-    TODO (Akshat Integration):
-    - Persist risk score window to PostgreSQL table.
-    - Append hash transaction to SHA-256 evidence hash-chain.
-    - Trigger PREVENT hold flow if is_flagged is True.
+    Atomically persists detection record and appends SHA-256 evidence log entry in DB.
     """
     logger.debug(
         f"on_detection hook fired for call_id={call_id}: "
@@ -61,4 +57,31 @@ async def on_detection(call_id: str, detection_payload: dict) -> None:
         f"fused_risk={detection_payload.get('fused_risk_score')}, "
         f"flagged={detection_payload.get('is_flagged')}"
     )
-    # Akshat's DB / SHA-256 hash chain / PREVENT hold functions will attach here.
+
+    try:
+        from backend.app.db.session import async_session_maker
+        from backend.app.services.detections import insert_detection
+        from backend.app.inference import get_classifier
+
+        model_version = detection_payload.get("model_version")
+        if not model_version:
+            try:
+                classifier = get_classifier()
+                model_version = getattr(classifier, "model_version", "v0.1-dummy")
+            except Exception:
+                model_version = "v0.1-dummy"
+
+        async with async_session_maker() as db:
+            await insert_detection(
+                db=db,
+                call_id=call_id,
+                window_start_ms=int(detection_payload.get("window_start_ms", 0)),
+                window_end_ms=int(detection_payload.get("window_end_ms", 2000)),
+                spoof_probability=float(detection_payload.get("spoof_probability", 0.0)),
+                fused_risk_score=float(detection_payload.get("fused_risk_score", 0.0)),
+                is_flagged=bool(detection_payload.get("is_flagged", False)),
+                model_version=str(model_version),
+            )
+    except Exception as e:
+        logger.warning(f"Error persisting detection/evidence in on_detection hook for call {call_id}: {e}")
+

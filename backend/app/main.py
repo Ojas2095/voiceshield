@@ -53,11 +53,15 @@ app.add_middleware(
 
 # Include API and WebSocket Routers
 from backend.app.security.auth import router as auth_router
-from backend.app.routes.calls import router as calls_router
+from backend.app.routers.calls import router as calls_router
+from backend.app.routers.evidence import router as evidence_router
+from backend.app.routers.prevent import router as prevent_router
 from backend.app.websocket import router as ws_router
 
 app.include_router(auth_router)
 app.include_router(calls_router)
+app.include_router(evidence_router)
+app.include_router(prevent_router)
 app.include_router(ws_router)
 
 

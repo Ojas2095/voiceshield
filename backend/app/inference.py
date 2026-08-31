@@ -5,9 +5,15 @@ import logging
 import math
 import time
 import numpy as np
-import torch
-import torch.nn as nn
-from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
+try:
+    import torch
+    import torch.nn as nn
+    from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
+except ImportError:
+    torch = None
+    nn = None
+    Wav2Vec2Model = None
+    Wav2Vec2FeatureExtractor = None
 
 from backend.app.config import settings
 
@@ -56,22 +62,30 @@ class DummyClassifier(SpoofClassifier):
         return round(score, 4)
 
 
-class VoiceShieldClassificationHead(nn.Module):
+_BaseModule = nn.Module if nn is not None else object
+
+
+class VoiceShieldClassificationHead(_BaseModule):
     """
     Linear classification head operating on pooled wav2vec2 hidden states.
     """
     def __init__(self, hidden_size: int = 1024):
         super().__init__()
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden_size, 256),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(256, 1),
-            nn.Sigmoid()
-        )
+        if nn is not None:
+            self.classifier = nn.Sequential(
+                nn.Linear(hidden_size, 256),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(256, 1),
+                nn.Sigmoid()
+            )
+        else:
+            self.classifier = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classifier(x)
+    def forward(self, x):
+        if self.classifier is not None:
+            return self.classifier(x)
+        return x
 
 
 class VoiceShieldClassifier(SpoofClassifier):

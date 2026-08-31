@@ -2,8 +2,13 @@ import dataclasses
 import logging
 from typing import Dict, List, Optional
 import numpy as np
-import torch
-import torchaudio
+
+try:
+    import torch
+    import torchaudio
+except ImportError:
+    torch = None
+    torchaudio = None
 
 logger = logging.getLogger("voiceshield.audio")
 
@@ -26,12 +31,20 @@ class TelephonySimulator:
     16kHz input -> resample to 8kHz -> G.711 mu-law encode/decode -> subtle noise injection -> resample to 16kHz.
     """
     def __init__(self):
-        self.resample_down = torchaudio.transforms.Resample(orig_freq=SAMPLE_RATE, new_freq=TELEPHONY_RATE)
-        self.resample_up = torchaudio.transforms.Resample(orig_freq=TELEPHONY_RATE, new_freq=SAMPLE_RATE)
-        self.mulaw_enc = torchaudio.transforms.MuLawEncoding(quantization_channels=256)
-        self.mulaw_dec = torchaudio.transforms.MuLawDecoding(quantization_channels=256)
+        if torchaudio is not None:
+            self.resample_down = torchaudio.transforms.Resample(orig_freq=SAMPLE_RATE, new_freq=TELEPHONY_RATE)
+            self.resample_up = torchaudio.transforms.Resample(orig_freq=TELEPHONY_RATE, new_freq=SAMPLE_RATE)
+            self.mulaw_enc = torchaudio.transforms.MuLawEncoding(quantization_channels=256)
+            self.mulaw_dec = torchaudio.transforms.MuLawDecoding(quantization_channels=256)
+        else:
+            self.resample_down = None
+            self.resample_up = None
+            self.mulaw_enc = None
+            self.mulaw_dec = None
 
-    def process(self, audio_tensor: torch.Tensor) -> torch.Tensor:
+    def process(self, audio_tensor):
+        if torchaudio is None or torch is None:
+            return audio_tensor
         if audio_tensor.numel() == 0:
             return audio_tensor
         
@@ -70,6 +83,9 @@ class SileroVADWrapper:
         self._load_vad()
 
     def _load_vad(self):
+        if torch is None:
+            self.model = None
+            return
         try:
             # Load silero vad from PyTorch Hub
             model, utils = torch.hub.load(
@@ -84,11 +100,11 @@ class SileroVADWrapper:
             logger.warning(f"Could not load Silero VAD from PyTorch Hub ({e}). Using energy-based VAD fallback.")
             self.model = None
 
-    def is_speech(self, audio_tensor: torch.Tensor, sample_rate: int = SAMPLE_RATE) -> bool:
+    def is_speech(self, audio_tensor, sample_rate: int = SAMPLE_RATE) -> bool:
         """
         Evaluate if a 2-second audio frame contains speech by processing in 512-sample chunks.
         """
-        if self.model is not None:
+        if torch is not None and self.model is not None and isinstance(audio_tensor, torch.Tensor):
             try:
                 # Ensure 1D float32 tensor
                 if audio_tensor.ndim > 1:
@@ -115,7 +131,10 @@ class SileroVADWrapper:
                 logger.warning(f"Silero VAD inference error: {e}. Falling back to energy VAD.")
         
         # Energy-based VAD fallback
-        rms = torch.sqrt(torch.mean(audio_tensor ** 2)).item()
+        if torch is not None and isinstance(audio_tensor, torch.Tensor):
+            rms = torch.sqrt(torch.mean(audio_tensor ** 2)).item()
+        else:
+            rms = float(np.sqrt(np.mean(np.array(audio_tensor) ** 2)))
         return rms > 0.01
 
 
@@ -180,13 +199,18 @@ class AudioPipeline:
             start_ms = int((start_sample * 1000) / SAMPLE_RATE)
             end_ms = int((end_sample * 1000) / SAMPLE_RATE)
 
-            # Apply Telephony Simulation DSP pass
-            tensor_win = torch.from_numpy(raw_window)
-            telephony_win_tensor = self.telephony_sim.process(tensor_win)
+            if torch is not None:
+                # Apply Telephony Simulation DSP pass
+                tensor_win = torch.from_numpy(raw_window)
+                telephony_win_tensor = self.telephony_sim.process(tensor_win)
+                is_sp = self.vad.is_speech(telephony_win_tensor, SAMPLE_RATE)
+                processed_np = telephony_win_tensor.detach().cpu().numpy() if isinstance(telephony_win_tensor, torch.Tensor) else raw_window
+            else:
+                is_sp = self.vad.is_speech(raw_window, SAMPLE_RATE)
+                processed_np = raw_window
 
             # Run Silero VAD gating
-            if self.vad.is_speech(telephony_win_tensor, SAMPLE_RATE):
-                processed_np = telephony_win_tensor.detach().cpu().numpy()
+            if is_sp:
                 speech_windows.append(
                     SpeechWindow(
                         audio_data=processed_np,

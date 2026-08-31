@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Risk Fusion Settings
     RISK_THRESHOLD: float = 0.70
 
-    # Database (Akshat integration seam)
+    # Database (PostgreSQL in production, sqlite for local tests)
     DATABASE_URL: str = "sqlite+aiosqlite:///./voiceshield.db"
 
     model_config = SettingsConfigDict(

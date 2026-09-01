@@ -11,6 +11,10 @@ env/
 # Environment variables (never commit secrets)
 .env
 
+# Datasets (fetched/generated locally — never commit, can be many GB)
+data/
+!data/.gitkeep
+
 # Model weights (too large for git — share via Drive/USB)
 ai/models/*.pt
 ai/models/*.bin

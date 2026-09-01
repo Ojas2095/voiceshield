@@ -161,19 +161,25 @@ class Layer1Detector:
         self.w2 = w2  # CNN branch weight
 
         # ── Load wav2vec2 backbone (frozen) ──
-        try:
-            from transformers import Wav2Vec2Model
-            self.wav2vec2 = Wav2Vec2Model.from_pretrained(wav2vec_model_name)
-            self.wav2vec2.eval()
-            for param in self.wav2vec2.parameters():
-                param.requires_grad = False
-            self.wav2vec2.to(self.device)
-            hidden_size = self.wav2vec2.config.hidden_size
-        except Exception as e:
-            print(f"[WARNING] Could not load wav2vec2 backbone: {e}")
-            print("[WARNING] wav2vec2 branch will be disabled. CNN-only mode.")
+        if wav2vec_model_name:
+            try:
+                from transformers import Wav2Vec2Model
+                self.wav2vec2 = Wav2Vec2Model.from_pretrained(wav2vec_model_name)
+                self.wav2vec2.eval()
+                for param in self.wav2vec2.parameters():
+                    param.requires_grad = False
+                self.wav2vec2.to(self.device)
+                hidden_size = self.wav2vec2.config.hidden_size
+            except Exception as e:
+                print(f"[WARNING] Could not load wav2vec2 backbone: {e}")
+                print("[WARNING] wav2vec2 branch will be disabled. CNN-only mode.")
+                self.wav2vec2 = None
+                hidden_size = 1024
+        else:
             self.wav2vec2 = None
             hidden_size = 1024
+            self.w1 = 0.0
+            self.w2 = 1.0
 
         # ── Trainable heads ──
         self.wav2vec_head = Wav2Vec2ClassifierHead(input_dim=hidden_size).to(self.device)

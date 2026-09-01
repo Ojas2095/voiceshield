@@ -11,6 +11,7 @@ import sys
 import json
 import argparse
 import time
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -80,8 +81,20 @@ class VoiceShieldDataset(Dataset):
         filepath = self.data_dir / entry["path"]
         label = entry["label"]
 
-        # Load the pre-processed 8kHz audio
-        waveform, sr = torchaudio.load(str(filepath))
+        # Load the pre-processed 8kHz audio with robust fallback
+        try:
+            waveform, sr = torchaudio.load(str(filepath))
+        except Exception:
+            from scipy.io import wavfile
+            sr, data_np = wavfile.read(str(filepath))
+            if data_np.dtype == np.int16:
+                data_float = data_np.astype(np.float32) / 32768.0
+            else:
+                data_float = data_np.astype(np.float32)
+            waveform = torch.from_numpy(data_float).unsqueeze(0)
+            if waveform.dim() == 1:
+                waveform = waveform.unsqueeze(0)
+
         waveform = pad_or_trim(waveform, WINDOW_SAMPLES_8K)
 
         # Compute mel-spectrogram for CNN branch
@@ -177,7 +190,7 @@ def train_mel_cnn(
             best_val_acc = val_acc
             save_path = os.path.join(output_dir, "best_mel_cnn.pt")
             torch.save(model.state_dict(), save_path)
-            print(f"  ✓ Saved best MelCNN (val_acc={val_acc:.1f}%) → {save_path}")
+            print(f"  [OK] Saved best MelCNN (val_acc={val_acc:.1f}%) -> {save_path}")
 
     print(f"\nMelCNN training complete. Best val accuracy: {best_val_acc:.1f}%")
     return model
@@ -319,4 +332,4 @@ if __name__ == "__main__":
     else:
         print("\n[SKIP] wav2vec2 head training (--cnn_only flag)")
 
-    print("\n✅ All training complete! Weights saved to:", args.output_dir)
+    print("\n[SUCCESS] All training complete! Weights saved to:", args.output_dir)

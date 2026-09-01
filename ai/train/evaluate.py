@@ -50,7 +50,19 @@ def load_evaluation_data(data_dir: str, only_generator: str = None) -> Tuple[Lis
         if not filepath.exists():
             continue
 
-        waveform, sr = torchaudio.load(str(filepath))
+        try:
+            waveform, sr = torchaudio.load(str(filepath))
+        except Exception:
+            from scipy.io import wavfile
+            sr, data_np = wavfile.read(str(filepath))
+            if data_np.dtype == np.int16:
+                data_float = data_np.astype(np.float32) / 32768.0
+            else:
+                data_float = data_np.astype(np.float32)
+            waveform = torch.from_numpy(data_float).unsqueeze(0)
+            if waveform.dim() == 1:
+                waveform = waveform.unsqueeze(0)
+
         chunk = preprocess_tensor(waveform, source_sr=sr, apply_degradation=False)
 
         waveforms_16k.append(chunk.waveform_16k)
@@ -149,7 +161,7 @@ def compute_eer(y_true: np.ndarray, y_scores: np.ndarray) -> Tuple[float, float]
     return eer, eer_threshold
 
 
-def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str = "cpu", only_generator: str = None, asvspoof_dir: str = None):
+def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str = "cpu", only_generator: str = None, asvspoof_dir: str = None, cnn_only: bool = False):
     """Run full evaluation and print results."""
     print("=" * 60)
     print("VoiceShield — Model Evaluation")
@@ -160,16 +172,23 @@ def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str
     print("=" * 60)
 
     # Load model
-    detector = Layer1Detector(device=device)
+    wav2vec_name = None if cnn_only else "facebook/wav2vec2-large-xlsr-53"
+    detector = Layer1Detector(wav2vec_model_name=wav2vec_name, device=device)
 
     head_path = os.path.join(weights_dir, "best_wav2vec_head.pt")
     cnn_path = os.path.join(weights_dir, "best_mel_cnn.pt")
 
-    if os.path.exists(head_path) and os.path.exists(cnn_path):
-        detector.load_weights(head_path, cnn_path)
-        print(f"✓ Loaded weights from {weights_dir}")
+    if os.path.exists(cnn_path):
+        if os.path.exists(head_path) and not cnn_only:
+            detector.load_weights(head_path, cnn_path)
+            print(f"[OK] Loaded dual-branch weights from {weights_dir}")
+        else:
+            detector.mel_cnn.load_state_dict(torch.load(cnn_path, map_location=device, weights_only=True))
+            detector.mel_cnn.eval()
+            detector._weights_loaded = True
+            print(f"[OK] Loaded MelCNN weights from {cnn_path}")
     else:
-        print(f"⚠ Weights not found at {weights_dir}, evaluating with untrained model")
+        print(f"[WARN] Weights not found at {weights_dir}, evaluating with untrained model")
 
     # Load data
     if asvspoof_dir:
@@ -253,7 +272,7 @@ def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str
                     "n_samples": int(len(labels)),
                     "note": "Operating threshold at Equal Error Rate; use in Layer1Detector verdict.",
                 }, f, indent=2)
-            print(f"  ✓ Saved calibrated threshold -> {thr_path}")
+            print(f"  [OK] Saved calibrated threshold -> {thr_path}")
         except Exception as e:
             print(f"  [WARN] could not save threshold.json: {e}")
 
@@ -292,6 +311,8 @@ if __name__ == "__main__":
                              "cross-generator generalization, e.g. --only_generator xtts_v2")
     parser.add_argument("--asvspoof_dir", type=str, default=None,
                         help="Path to ASVspoof 2019/2021 LA dataset folder containing protocols and audio files")
+    parser.add_argument("--cnn_only", action="store_true",
+                        help="Evaluate using only MelCNN branch without loading wav2vec2 backbone")
     args = parser.parse_args()
 
     evaluate(
@@ -300,4 +321,5 @@ if __name__ == "__main__":
         device=args.device,
         only_generator=args.only_generator,
         asvspoof_dir=args.asvspoof_dir,
+        cnn_only=args.cnn_only,
     )

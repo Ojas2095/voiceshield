@@ -1,0 +1,6 @@
+{
+  "eer_threshold": 0.9999,
+  "eer": 0.0,
+  "n_samples": 300,
+  "note": "Operating threshold at Equal Error Rate; use in Layer1Detector verdict."
+}

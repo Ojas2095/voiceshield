@@ -80,6 +80,30 @@ These are your Q&A cheat-sheet numbers.
 
 ---
 
+## A6 — Make the claims defensible (E1 / E2 / E5)
+These small flags turn "it works on our data" into claims you can defend in Q&A.
+
+**Hindi fakes (E2)** — back the Indian-language claim by synthesizing Hindi scam audio:
+```bash
+python -m ai.train.build_dataset --real_dir data/real_raw --output_dir data --num_fake 2 --lang hi
+```
+
+**Cross-generator generalization (E1)** — the headline claim. Hold a generator OUT of
+training, then evaluate on it (unseen):
+```bash
+# train WITHOUT xtts_v2 fakes
+python -m ai.train.train_head --data_dir data --epochs 30 --holdout_generator xtts_v2
+# evaluate ONLY on the unseen xtts_v2 fakes
+python -m ai.train.evaluate --data_dir data --weights_dir ai/models --only_generator xtts_v2
+```
+Report BOTH numbers: standard EER (mixed) and cross-generator EER (unseen). The second
+is the one that proves you catch generators you never trained on.
+
+**Calibrated threshold (E5)** — the standard eval writes `ai/models/threshold.json` with the
+Equal-Error-Rate operating point. Use it instead of the hardcoded 0.7/0.4 cut-offs.
+
+---
+
 ## Colab quick-path (recommended end-to-end)
 ```python
 !git clone -b ai/data-and-training https://github.com/Ojas2095/voiceshield.git

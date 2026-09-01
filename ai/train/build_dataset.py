@@ -62,11 +62,11 @@ def load_and_preprocess(filepath: Path, apply_augmentation: bool = True) -> torc
     return waveform
 
 
-def generate_fake_with_gtts(text: str, output_path: str) -> bool:
-    """Generate a fake audio sample using Google TTS."""
+def generate_fake_with_gtts(text: str, output_path: str, lang: str = "en") -> bool:
+    """Generate a fake audio sample using Google TTS (supports 'hi', 'ta', 'bn', ...)."""
     try:
         from gtts import gTTS
-        tts = gTTS(text=text, lang="en", slow=False)
+        tts = gTTS(text=text, lang=lang, slow=False)
         tts.save(output_path)
         return True
     except Exception as e:
@@ -74,10 +74,10 @@ def generate_fake_with_gtts(text: str, output_path: str) -> bool:
         return False
 
 
-def generate_fake_with_xtts(text: str, speaker_wav: str, output_path: str) -> bool:
+def generate_fake_with_xtts(text: str, speaker_wav: str, output_path: str, language: str = "en") -> bool:
     """
-    Generate a cloned voice using Coqui XTTS-v2.
-    Requires: pip install TTS
+    Generate a cloned voice using Coqui XTTS-v2 (multilingual — set language='hi'
+    for Hindi clones). Requires: pip install TTS
     """
     try:
         from TTS.api import TTS
@@ -85,7 +85,7 @@ def generate_fake_with_xtts(text: str, speaker_wav: str, output_path: str) -> bo
         tts.tts_to_file(
             text=text,
             speaker_wav=speaker_wav,
-            language="en",
+            language=language,
             file_path=output_path,
         )
         return True
@@ -94,12 +94,40 @@ def generate_fake_with_xtts(text: str, speaker_wav: str, output_path: str) -> bo
         return False
 
 
+# Realistic scam scripts to synthesize as fakes, per language.
+SCAM_TEXTS = {
+    "en": [
+        "Hello, this is your bank calling about your account.",
+        "Please share your OTP for verification purposes.",
+        "Your account has been compromised, transfer funds immediately.",
+        "This is the police, you are under digital arrest.",
+        "Please confirm your identity by providing your Aadhaar number.",
+        "Your credit card has been blocked due to suspicious activity.",
+        "We need to verify your account, please stay on the line.",
+        "Your loan application has been approved, please confirm.",
+        "There is a warrant issued in your name, cooperate now.",
+        "Install AnyDesk so we can process your refund.",
+    ],
+    "hi": [
+        "नमस्ते, मैं आपके बैंक से बोल रहा हूँ, आपके खाते के बारे में बात करनी है।",
+        "कृपया वेरिफिकेशन के लिए अपना ओटीपी बताइए।",
+        "आपका खाता हैक हो गया है, तुरंत पैसे ट्रांसफर कीजिए।",
+        "मैं पुलिस से बोल रहा हूँ, आप डिजिटल अरेस्ट में हैं।",
+        "अपनी पहचान की पुष्टि के लिए अपना आधार नंबर बताइए।",
+        "आपका क्रेडिट कार्ड संदिग्ध गतिविधि के कारण ब्लॉक कर दिया गया है।",
+        "आपके नाम पर वारंट है, अभी सहयोग कीजिए वरना गिरफ्तारी होगी।",
+        "केवाईसी अपडेट करने के लिए यह ऐप इंस्टॉल कीजिए।",
+    ],
+}
+
+
 def build_dataset(
     real_audio_dir: str,
     output_dir: str,
     num_fake_per_real: int = 2,
     use_xtts: bool = True,
     texts_for_tts: List[str] = None,
+    lang: str = "en",
 ):
     """
     Build the full training dataset.
@@ -117,18 +145,7 @@ def build_dataset(
     fake_out.mkdir(parents=True, exist_ok=True)
 
     if texts_for_tts is None:
-        texts_for_tts = [
-            "Hello, this is your bank calling about your account.",
-            "Please share your OTP for verification purposes.",
-            "Your account has been compromised, transfer funds immediately.",
-            "This is the police, you are under digital arrest.",
-            "Please confirm your identity by providing your Aadhaar number.",
-            "Your credit card has been blocked due to suspicious activity.",
-            "We need to verify your account, please stay on the line.",
-            "This call is being recorded for quality assurance.",
-            "Your loan application has been approved, please confirm.",
-            "There is a warrant issued in your name, cooperate now.",
-        ]
+        texts_for_tts = SCAM_TEXTS.get(lang, SCAM_TEXTS["en"])
 
     manifest = []
     real_files = discover_audio_files(real_audio_dir)
@@ -168,11 +185,11 @@ def build_dataset(
         if use_xtts and fake_count % 3 != 0:
             # Use a random real file as the speaker reference for cloning
             ref_file = str(random.choice(real_files))
-            success = generate_fake_with_xtts(text, ref_file, raw_path)
+            success = generate_fake_with_xtts(text, ref_file, raw_path, language=lang)
             generator = "xtts_v2"
-        
+
         if not success:
-            success = generate_fake_with_gtts(text, raw_path)
+            success = generate_fake_with_gtts(text, raw_path, lang=lang)
             generator = "gtts"
 
         if success and os.path.exists(raw_path):
@@ -212,6 +229,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="./data", help="Output directory")
     parser.add_argument("--num_fake", type=int, default=2, help="Fake samples per real sample")
     parser.add_argument("--no_xtts", action="store_true", help="Disable XTTS (gTTS only)")
+    parser.add_argument("--lang", type=str, default="en",
+                        help="Language for synthesized fakes: en, hi, ta, bn, ... (Hindi backs the Indian-language claim)")
     args = parser.parse_args()
 
     build_dataset(
@@ -219,4 +238,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         num_fake_per_real=args.num_fake,
         use_xtts=not args.no_xtts,
+        lang=args.lang,
     )

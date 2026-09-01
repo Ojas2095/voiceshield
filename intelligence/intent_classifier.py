@@ -42,40 +42,46 @@ class Category:
 
 
 CATEGORIES: List[Category] = [
-    Category("credential_theft", 0.42, [
+    Category("credential_theft", 0.45, [
         r"\botp\b", r"one[\s-]*time[\s-]*password", r"\bpin\b", r"\bcvv\b",
         r"\bpassword\b", r"\bpasscode\b", r"card\s*number", r"expiry\s*date",
-        r"\baadhaar?\b", r"\bpan\s*card\b", r"\bkyc\b", r"net\s*banking",
+        r"\baadhaar?\b", r"\bpan\s*card\b", r"\bkyc\b", r"net\s*banking", r"debit\s*card",
+        r"atm\s*card", r"bank\s*account", r"खाता", r"बैंक",
         r"otp\s*(batao|bata|do|share|send)", r"otp\s*नंबर", r"ओटीपी",
-        r"आधार", r"पिन\s*नंबर", r"card\s*ki\s*detail",
+        r"आधार", r"पिन\s*नंबर", r"सीवीवी", r"card\s*ki\s*detail",
     ]),
-    Category("authority_impersonation", 0.38, [
+    Category("authority_impersonation", 0.40, [
         r"\bpolice\b", r"\bcbi\b", r"\bcustoms?\b", r"\bnarcotics\b", r"\bfedex\b",
-        r"\bcourt\b", r"\bwarrant\b", r"\barrest\b", r"digital\s*arrest",
+        r"\bcourt\b", r"\bwarrant\b", r"\barrest\b", r"digital\s*arrest", r"\bcourier\b",
         r"income\s*tax", r"cyber\s*cell", r"trai\b", r"enforcement\s*directorate",
-        r"giraftaar", r"गिरफ्तार", r"वारंट", r"अदालत", r"पुलिस",
-        r"main\s*(inspector|officer)\s*bol", r"thane\s*se\s*bol",
+        r"money\s*laundering", r"illegal\s*(drugs|parcel)", r"seized",
+        r"giraftaar", r"गिरफ्तार", r"वारंट", r"अदालत", r"पुलिस", r"सीबीआई", r"दूरसंचार",
+        r"main\s*(inspector|officer|dcp)\s*bol", r"thane\s*se\s*bol", r"customs\s*me",
     ]),
-    Category("urgency_threat", 0.30, [
-        r"\bimmediately\b", r"\burgent(ly)?\b", r"right\s*now", r"within\s*\d+\s*(min|hour)",
-        r"account\s*(is\s*)?(blocked|suspended|frozen|deactivat)",
-        r"legal\s*action", r"last\s*warning", r"final\s*notice", r"do\s*not\s*(tell|inform)",
+    Category("urgency_threat", 0.35, [
+        r"\bimmediately\b", r"\burgent(ly)?\b", r"right\s*now", r"within\s*\d+\s*(min|hour|ghante)",
+        r"account\s*(is\s*)?(blocked|suspended|frozen|deactivat|freeze|seize)",
+        r"legal\s*action", r"last\s*warning", r"final\s*notice", r"do\s*not\s*(tell|inform|disconnect)",
+        r"call\s*disconnect\s*mat", r"electricity\s*(connection\s*)?(will\s*be\s*)?disconnect",
+        r"bijli\s*(ka\s*connection)?", r"बिजली", r"काट\s*दी\s*जाएगी",
+        r"fine", r"penalty", r"raid", r"fir\b", r"पेनल्टी", r"जुर्माना",
         r"turant", r"jaldi", r"abhi\s*ke\s*abhi", r"block\s*ho\s*jaye",
         r"तुरंत", r"जल्दी", r"बंद\s*हो\s*जाएगा", r"kisi\s*ko\s*mat\s*bata",
     ]),
-    Category("financial_request", 0.34, [
-        r"transfer\s*(the\s*)?(money|funds|amount)", r"send\s*money", r"\bupi\b",
+    Category("financial_request", 0.36, [
+        r"transfer\s*(the\s*)?(money|funds|amount|rupees|\d+)", r"send\s*money", r"\bupi\b",
         r"google\s*pay|gpay|phonepe|paytm", r"scan\s*(the\s*)?qr", r"\brefund\b",
-        r"processing\s*fee", r"security\s*deposit", r"pay\s*(the\s*)?fee",
-        r"paisa\s*(bhej|transfer)", r"paise\s*bhej", r"amount\s*bhej",
-        r"पैसे?\s*भेज", r"transfer\s*kar(o|do|iye)", r"account\s*me\s*daal",
+        r"processing\s*fee", r"security\s*deposit", r"pay\s*(the\s*)?(fee|fine|bill|tax)",
+        r"paisa\s*(bhej|transfer)", r"paise\s*bhej", r"amount\s*bhej", r"bhejo",
+        r"पैसे?\s*भेज", r"transfer\s*kar(o|do|iye)", r"account\s*me\s*daal", r"जमा\s*करें",
     ]),
-    Category("lottery_prize", 0.26, [
+    Category("lottery_prize", 0.30, [
         r"you\s*have\s*won", r"\blottery\b", r"lucky\s*draw", r"prize\s*money",
         r"cash\s*prize", r"free\s*gift", r"reward\s*points\s*expir",
-        r"lottery\s*laga", r"inaam", r"इनाम", r"lottery\s*jeet",
+        r"pre-approved(\s*personal)?\s*loan", r"loan\s*pass", r"loan\s*of",
+        r"lottery\s*laga", r"inaam", r"इनाम", r"लॉटरी", r"लोन", r"lottery\s*jeet",
     ]),
-    Category("remote_access", 0.30, [
+    Category("remote_access", 0.35, [
         r"anydesk", r"team\s*viewer", r"quick\s*support", r"screen\s*shar",
         r"install\s*(the\s*)?app", r"download\s*(the\s*)?app",
         r"app\s*install\s*kar", r"screen\s*dikha",

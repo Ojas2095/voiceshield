@@ -180,9 +180,31 @@ class Layer1Detector:
         self.mel_cnn = MelCNN().to(self.device)
 
         self._weights_loaded = False
+        self.fraud_threshold: float = 0.70
+        self.suspicious_threshold: float = 0.40
 
-    def load_weights(self, wav2vec_head_path: str, cnn_path: str):
-        """Load trained classifier weights from disk."""
+    def load_threshold(self, threshold_json_path: str):
+        """Load calibrated operational thresholds from threshold.json."""
+        import os, json
+        if os.path.exists(threshold_json_path):
+            try:
+                with open(threshold_json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "fraud_threshold" in data:
+                    self.fraud_threshold = float(data["fraud_threshold"])
+                elif "eer_threshold" in data:
+                    self.fraud_threshold = float(data["eer_threshold"])
+                if "suspicious_threshold" in data:
+                    self.suspicious_threshold = float(data["suspicious_threshold"])
+                elif "eer_threshold" in data:
+                    self.suspicious_threshold = max(0.15, self.fraud_threshold * 0.6)
+                print(f"[Layer1Detector] Loaded calibrated thresholds: Suspicious>={self.suspicious_threshold:.3f}, Fraud>={self.fraud_threshold:.3f}")
+            except Exception as e:
+                print(f"[Layer1Detector] Could not parse threshold.json ({e}). Using defaults.")
+
+    def load_weights(self, wav2vec_head_path: str, cnn_path: str, threshold_json_path: Optional[str] = None):
+        """Load trained classifier weights from disk and optional calibrated threshold."""
+        import os
         self.wav2vec_head.load_state_dict(
             torch.load(wav2vec_head_path, map_location=self.device, weights_only=True)
         )
@@ -192,6 +214,15 @@ class Layer1Detector:
         self.wav2vec_head.eval()
         self.mel_cnn.eval()
         self._weights_loaded = True
+
+        # Check for threshold.json in weights dir if not explicitly given
+        if threshold_json_path and os.path.exists(threshold_json_path):
+            self.load_threshold(threshold_json_path)
+        else:
+            weights_dir = os.path.dirname(wav2vec_head_path)
+            candidate = os.path.join(weights_dir, "threshold.json")
+            if os.path.exists(candidate):
+                self.load_threshold(candidate)
 
     @torch.no_grad()
     def predict(
@@ -240,10 +271,10 @@ class Layer1Detector:
         else:
             p_fake = p_cnn  # CNN-only fallback
 
-        # ── Verdict ──
-        if p_fake >= 0.7:
+        # ── Verdict based on calibrated thresholds ──
+        if p_fake >= self.fraud_threshold:
             verdict = "FRAUD"
-        elif p_fake >= 0.4:
+        elif p_fake >= self.suspicious_threshold:
             verdict = "SUSPICIOUS"
         else:
             verdict = "REAL"

@@ -60,6 +60,76 @@ def load_evaluation_data(data_dir: str, only_generator: str = None) -> Tuple[Lis
     return waveforms_16k, mels, labels
 
 
+def load_asvspoof_data(asvspoof_dir: str, max_samples: int = 2000) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[int]]:
+    """
+    Load ASVspoof 2019 / 2021 LA evaluation or development trial data.
+    Looks for protocol metadata file (e.g. *.trl.txt or trial_metadata.txt) and flac/wav files.
+    """
+    asv_path = Path(asvspoof_dir)
+    protocol_files = list(asv_path.rglob("*.txt"))
+
+    protocol_file = None
+    for pf in protocol_files:
+        if "eval" in pf.name.lower() or "keys" in str(pf).lower() or "trial" in pf.name.lower():
+            protocol_file = pf
+            break
+    if protocol_file is None and protocol_files:
+        protocol_file = protocol_files[0]
+
+    waveforms_16k = []
+    mels = []
+    labels = []
+
+    if protocol_file:
+        print(f"  Parsing ASVspoof protocol: {protocol_file.name}")
+        with open(protocol_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        audio_files = {p.stem: p for p in asv_path.rglob("*.flac")}
+        audio_files.update({p.stem: p for p in asv_path.rglob("*.wav")})
+
+        count = 0
+        for line in lines:
+            parts = line.strip().split()
+            if len(parts) < 4:
+                continue
+            # Typical format: SPEAKER_ID AUDIO_FILE_NAME - - KEY (bonafide / spoof)
+            file_id = parts[1]
+            key = parts[-1].lower()
+
+            if file_id in audio_files:
+                label = 0 if key == "bonafide" else 1
+                audio_path = audio_files[file_id]
+                try:
+                    waveform, sr = torchaudio.load(str(audio_path))
+                    chunk = preprocess_tensor(waveform, source_sr=sr, apply_degradation=False)
+                    waveforms_16k.append(chunk.waveform_16k)
+                    mels.append(chunk.mel_spectrogram)
+                    labels.append(label)
+                    count += 1
+                    if count >= max_samples:
+                        break
+                except Exception as e:
+                    continue
+    else:
+        # Fallback: discover any flac/wav files in directories named 'bonafide' or 'spoof'
+        for f in asv_path.rglob("*.*"):
+            if f.suffix.lower() in [".flac", ".wav"]:
+                label = 0 if "bonafide" in str(f).lower() or "real" in str(f).lower() else 1
+                try:
+                    waveform, sr = torchaudio.load(str(f))
+                    chunk = preprocess_tensor(waveform, source_sr=sr, apply_degradation=False)
+                    waveforms_16k.append(chunk.waveform_16k)
+                    mels.append(chunk.mel_spectrogram)
+                    labels.append(label)
+                    if len(labels) >= max_samples:
+                        break
+                except Exception:
+                    continue
+
+    return waveforms_16k, mels, labels
+
+
 def compute_eer(y_true: np.ndarray, y_scores: np.ndarray) -> Tuple[float, float]:
     """
     Compute Equal Error Rate (EER).
@@ -79,11 +149,13 @@ def compute_eer(y_true: np.ndarray, y_scores: np.ndarray) -> Tuple[float, float]
     return eer, eer_threshold
 
 
-def evaluate(data_dir: str, weights_dir: str, device: str = "cpu", only_generator: str = None):
+def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str = "cpu", only_generator: str = None, asvspoof_dir: str = None):
     """Run full evaluation and print results."""
     print("=" * 60)
     print("VoiceShield — Model Evaluation")
-    if only_generator:
+    if asvspoof_dir:
+        print(f"ASVSPOOF BENCHMARK mode: loading ASVspoof dataset from '{asvspoof_dir}'")
+    elif only_generator:
         print(f"CROSS-GENERATOR mode: fakes limited to unseen generator '{only_generator}'")
     print("=" * 60)
 
@@ -100,8 +172,13 @@ def evaluate(data_dir: str, weights_dir: str, device: str = "cpu", only_generato
         print(f"⚠ Weights not found at {weights_dir}, evaluating with untrained model")
 
     # Load data
-    print(f"\nLoading evaluation data from {data_dir}...")
-    waveforms_16k, mels, labels = load_evaluation_data(data_dir, only_generator=only_generator)
+    if asvspoof_dir:
+        print(f"\nLoading ASVspoof evaluation data from {asvspoof_dir}...")
+        waveforms_16k, mels, labels = load_asvspoof_data(asvspoof_dir)
+    else:
+        print(f"\nLoading evaluation data from {data_dir}...")
+        waveforms_16k, mels, labels = load_evaluation_data(data_dir, only_generator=only_generator)
+
     print(f"  Loaded {len(labels)} samples (Real: {labels.count(0)}, Fake: {labels.count(1)})")
 
     if len(labels) == 0:
@@ -213,6 +290,14 @@ if __name__ == "__main__":
     parser.add_argument("--only_generator", type=str, default=None,
                         help="Evaluate only on fakes from this (held-out) generator to measure "
                              "cross-generator generalization, e.g. --only_generator xtts_v2")
+    parser.add_argument("--asvspoof_dir", type=str, default=None,
+                        help="Path to ASVspoof 2019/2021 LA dataset folder containing protocols and audio files")
     args = parser.parse_args()
 
-    evaluate(args.data_dir, args.weights_dir, args.device, only_generator=args.only_generator)
+    evaluate(
+        data_dir=args.data_dir,
+        weights_dir=args.weights_dir,
+        device=args.device,
+        only_generator=args.only_generator,
+        asvspoof_dir=args.asvspoof_dir,
+    )

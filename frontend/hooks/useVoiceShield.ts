@@ -8,6 +8,7 @@ export interface ShieldResponse {
     intent_risk: number;
     call_signal_risk: number;
   };
+  reasons?: string[];
   gradcam_png_b64: string | null;
 }
 
@@ -23,6 +24,7 @@ export const useVoiceShield = (callId: string) => {
     verdict: 'WAITING',
     risk_score: 0,
     layers: { voice_authenticity: 0, intent_risk: 0, call_signal_risk: 0 },
+    reasons: [],
     gradcam_png_b64: null,
   });
   const [logs, setLogs] = useState<EvidenceLog[]>([]);

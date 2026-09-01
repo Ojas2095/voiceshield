@@ -72,6 +72,18 @@ export default function Dashboard() {
                 {data.verdict === 'SUSPICIOUS' && <Activity className="w-6 h-6" />}
                 <span className="text-2xl font-black tracking-widest">{data.verdict}</span>
               </div>
+              {data.reasons && data.reasons.length > 0 && (
+                <div className="mt-4 w-full flex flex-col gap-1.5 items-center">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Detected Signals:</span>
+                  <div className="flex flex-wrap gap-1.5 justify-center">
+                    {data.reasons.map((r, i) => (
+                      <span key={i} className="text-xs font-mono bg-rose-950/80 text-rose-300 border border-rose-800/60 px-2 py-0.5 rounded">
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

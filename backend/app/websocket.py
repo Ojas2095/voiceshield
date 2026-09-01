@@ -16,12 +16,12 @@ logger = logging.getLogger("voiceshield.websocket")
 router = APIRouter(tags=["websocket"])
 
 # ── Per-call intelligence state (Layers 2 & 3) ────────────────────────
-_call_signal_cache: Dict[str, float] = {}   # Layer 3 risk, computed once per call
-_intent_cache: Dict[str, float] = {}        # Layer 2 last intent risk
+_call_signal_cache: Dict[str, dict] = {}   # Layer 3 full result per call
+_intent_cache: Dict[str, dict] = {}        # Layer 2 full result per call
 _asr_buffer: Dict[str, list] = {}           # accumulated speech for periodic ASR
 
 
-def _compute_call_signal(call_record) -> float:
+def _compute_call_signal(call_record) -> dict:
     """Layer 3: cheap metadata rules. Extend CallRecord with `number`/
     `claimed_entity` to light this up fully; today only the hour is available."""
     try:
@@ -33,13 +33,13 @@ def _compute_call_signal(call_record) -> float:
         for attr in ("number", "claimed_entity", "in_contacts"):
             if hasattr(call_record, attr):
                 meta[attr] = getattr(call_record, attr)
-        return float(score_call_signals(meta)["call_signal_risk"])
+        return score_call_signals(meta)
     except Exception as e:
         logger.debug(f"Layer3 call-signal skipped: {e}")
-        return 0.0
+        return {"call_signal_risk": 0.0, "reasons": []}
 
 
-def _compute_intent_risk(call_id: str, window) -> float:
+def _compute_intent_risk(call_id: str, window) -> dict:
     """Layer 2: accumulate speech, transcribe periodically (Whisper), score scam
     intent. Gated by settings.ENABLE_LAYER2_ASR; fully guarded so it can never
     stall or crash the realtime loop — returns the last cached value otherwise."""
@@ -53,16 +53,16 @@ def _compute_intent_risk(call_id: str, window) -> float:
 
         n = max(1, settings.ASR_EVERY_N_WINDOWS)
         if len(buf) % n != 0:
-            return _intent_cache.get(call_id, 0.0)
+            return _intent_cache.get(call_id, {"intent_risk": 0.0, "matched": [], "top_category": None})
 
         audio = np.concatenate(buf[-n:])
         out = global_transcriber.transcribe_array(audio, sample_rate=16000)
         if out.get("text"):
-            _intent_cache[call_id] = float(score_intent(out["text"])["intent_risk"])
-        return _intent_cache.get(call_id, 0.0)
+            _intent_cache[call_id] = score_intent(out["text"])
+        return _intent_cache.get(call_id, {"intent_risk": 0.0, "matched": [], "top_category": None})
     except Exception as e:
         logger.debug(f"Layer2 intent skipped: {e}")
-        return _intent_cache.get(call_id, 0.0)
+        return _intent_cache.get(call_id, {"intent_risk": 0.0, "matched": [], "top_category": None})
 
 
 def _clear_intelligence_state(call_id: str) -> None:
@@ -125,6 +125,7 @@ active_stream_manager = StreamConnectionManager()
 
 
 @router.websocket("/ws/stream/{call_id}")
+@router.websocket("/ws/calls/{call_id}/audio")
 async def websocket_stream_endpoint(websocket: WebSocket, call_id: str):
     """
     WebSocket endpoint for real-time PCM audio streaming and risk updates.
@@ -229,12 +230,15 @@ async def websocket_stream_endpoint(websocket: WebSocket, call_id: str):
                     gradcam_b64 = None
 
                 # ── Layer 2: conversation intent (gated — heavy ASR) ──
-                intent_risk = (
+                intent_info = (
                     _compute_intent_risk(call_id, window)
-                    if settings.ENABLE_LAYER2_ASR else 0.0
+                    if settings.ENABLE_LAYER2_ASR else {"intent_risk": 0.0, "matched": [], "top_category": None}
                 )
+                intent_risk = float(intent_info.get("intent_risk", 0.0))
+
                 # ── Layer 3: call signals (precomputed per call) ──
-                call_signal_risk = _call_signal_cache.get(call_id, 0.0)
+                signal_info = _call_signal_cache.get(call_id, {"call_signal_risk": 0.0, "reasons": []})
+                call_signal_risk = float(signal_info.get("call_signal_risk", 0.0))
 
                 # ── 3-layer fusion (rolling-smoothed) ──
                 fused_risk, is_flagged = global_risk_tracker.update_risk(
@@ -247,6 +251,17 @@ async def websocket_stream_endpoint(websocket: WebSocket, call_id: str):
                     else "SUSPICIOUS" if fused_risk >= 0.40
                     else "REAL"
                 )
+
+                # Assemble human-readable explanations (reasons) for UI and audit logs
+                reasons = []
+                if p_fake >= 0.50:
+                    reasons.append(f"synthetic_voice_timbre ({p_fake*100:.0f}%)")
+                if intent_info.get("matched"):
+                    reasons.extend(intent_info["matched"][:2])
+                elif intent_info.get("top_category"):
+                    reasons.append(f"suspicious_intent: {intent_info['top_category']}")
+                if signal_info.get("reasons"):
+                    reasons.extend(signal_info["reasons"][:2])
 
                 # Internal payload for persistence / SHA-256 hash-chain (keys unchanged)
                 detection_payload = {
@@ -268,6 +283,7 @@ async def websocket_stream_endpoint(websocket: WebSocket, call_id: str):
                         "intent_risk": round(intent_risk * 100, 1),
                         "call_signal_risk": round(call_signal_risk * 100, 1),
                     },
+                    "reasons": reasons,
                     "gradcam_png_b64": gradcam_b64,
                 }
                 await websocket.send_json(client_payload)

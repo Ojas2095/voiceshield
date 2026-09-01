@@ -38,25 +38,43 @@ import threading
 
 class DummyClassifier:
     """
-    Simulates inference with slightly realistic behaviour:
-    - Returns a score that drifts gradually rather than pure white noise.
-    - Bumps up probability if the audio is loud (crude energy heuristic).
-    Used as the default until real model weights are available.
+    Demo classifier — mean-reverting Ornstein-Uhlenbeck process.
+
+    Behaviour:
+      • In silence / normal speech  → score sits near BASELINE (~0.10) → verdict REAL
+      • Occasional random spikes    → briefly enter SUSPICIOUS but revert
+      • Sustained high-energy burst → can approach FRAUD threshold but not camp there
+      • Score NEVER random-walks to high values and stays there
+
+    The original implementation used `prev + gauss(0, 0.08) + energy*0.3` with no
+    mean-reversion, so it would drift to 0.7+ and flag every normal call as FRAUD.
+    OU process: dx = θ(μ - x)dt + σ dW  with θ=0.25, μ=0.10, σ=0.04
     """
 
     model_version = "dummy-v0"
 
+    # OU parameters
+    _MU = 0.10       # long-run mean (clearly REAL territory)
+    _THETA = 0.25    # mean-reversion speed  (higher = snaps back faster)
+    _SIGMA = 0.04    # noise magnitude       (small — no wild swings)
+    _ENERGY_SCALE = 0.08  # how much RMS energy can push the score up
+
     def __init__(self):
-        self._prev: float = 0.1
+        self._score: float = self._MU
         self._lock = threading.Lock()
 
     def _infer_sync(self, window: np.ndarray) -> float:
-        energy = float(np.sqrt(np.mean(window ** 2)))
+        rms = float(np.sqrt(np.mean(window ** 2)))
         with self._lock:
-            drift = random.gauss(0, 0.08)
-            score = float(np.clip(self._prev + drift + energy * 0.3, 0.0, 1.0))
-            self._prev = score
-        return score
+            # OU update: pull toward μ + tiny noise + small energy bump
+            reversion = self._THETA * (self._MU - self._score)
+            noise     = random.gauss(0.0, self._SIGMA)
+            energy_push = rms * self._ENERGY_SCALE  # rms ~0.05-0.15 → push ~0.004-0.012
+            self._score = float(np.clip(
+                self._score + reversion + noise + energy_push,
+                0.0, 1.0
+            ))
+        return self._score
 
     async def infer(self, window: np.ndarray) -> float:
         loop = asyncio.get_running_loop()
@@ -64,7 +82,7 @@ class DummyClassifier:
 
     def warm_up(self) -> None:
         self._infer_sync(np.zeros(32_000, dtype=np.float32))
-        logger.info("DummyClassifier warmed up")
+        logger.info("DummyClassifier warmed up (OU process, μ=%.2f)", self._MU)
 
 
 # ── Real Classifier (requires torch + transformers) ──────────────────────────

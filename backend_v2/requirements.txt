@@ -1,0 +1,35 @@
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+websockets==13.1
+python-multipart==0.0.12
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10          # optional: for sync migrations / psql tooling
+
+# ── Config ────────────────────────────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# ── Signal Processing (telephony sim + VAD ring buffer) ───────────────────────
+numpy==1.26.4
+scipy==1.14.1
+
+# ── ML / Inference (real classifier — not needed for dummy mode) ──────────────
+# torch and transformers are intentionally not pinned so the AI/ML pod can
+# install their preferred CUDA-variant. Install manually:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+#   pip install transformers accelerate
+#
+# If you're CPU-only at the venue:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   pip install transformers
+
+# ── Dev / Test ────────────────────────────────────────────────────────────────
+greenlet==3.1.1                  # required by SQLAlchemy async on Python 3.13
+aiosqlite==0.20.0                # in-memory SQLite for tests (no Postgres needed)
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1                    # for TestClient async support

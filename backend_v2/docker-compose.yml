@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: voiceshield_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: voiceshield
+      POSTGRES_PASSWORD: voiceshield
+      POSTGRES_DB: voiceshield
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voiceshield -d voiceshield"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: voiceshield_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://voiceshield:voiceshield@db:5432/voiceshield
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro   # mount trained weights without rebuilding image
+    depends_on:
+      db:
+        condition: service_healthy
+    # For local dev without rebuilding: mount the source and use --reload
+    # volumes:
+    #   - ./app:/app/app
+    # command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  pg_data:

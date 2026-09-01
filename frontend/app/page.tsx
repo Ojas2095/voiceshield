@@ -1,6 +1,7 @@
 'use client';
+import Link from 'next/link';
 import { useVoiceShield } from '../hooks/useVoiceShield';
-import { Shield, ShieldAlert, ShieldCheck, Activity, Mic, MicOff } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, Activity, Mic, MicOff, Hash } from 'lucide-react';
 
 export default function Dashboard() {
   const { isMonitoring, micError, holdAlert, startMonitoring, stopMonitoring, data, logs } = useVoiceShield();
@@ -48,6 +49,12 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">VoiceShield</h1>
             <p className="text-xs text-slate-400 uppercase tracking-widest">SIH 2026 Core Module</p>
           </div>
+          <Link
+            href="/evidence"
+            className="ml-4 flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-400 border border-slate-700 hover:border-indigo-500/40 px-2.5 py-1.5 rounded-md transition-colors"
+          >
+            <Hash className="w-3.5 h-3.5" /> Evidence Audit
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           {micError && (

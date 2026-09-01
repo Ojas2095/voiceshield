@@ -77,8 +77,9 @@ class GradCAMGenerator:
         """
         self.model.eval()
 
-        # Need gradients for this pass
-        mel_input = mel_input.clone().requires_grad_(True)
+        # Ensure tensor is on the same device as the model
+        device = next(self.model.parameters()).device
+        mel_input = mel_input.to(device).clone().requires_grad_(True)
 
         # Forward pass
         output = self.model(mel_input)

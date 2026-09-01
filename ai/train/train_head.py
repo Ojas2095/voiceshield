@@ -34,7 +34,12 @@ from ai.layer1_authenticity import Wav2Vec2ClassifierHead, MelCNN
 class VoiceShieldDataset(Dataset):
     """PyTorch dataset loading from the manifest.json created by build_dataset.py."""
 
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, exclude_generators=None, only_generators=None):
+        """
+        exclude_generators: list of generator names to DROP (e.g. hold out a
+            generator from training so it stays 'unseen' for cross-generator eval).
+        only_generators: if set, keep ONLY these generators (reals are always kept).
+        """
         self.data_dir = Path(data_dir)
         manifest_path = self.data_dir / "manifest.json"
 
@@ -43,6 +48,25 @@ class VoiceShieldDataset(Dataset):
 
         with open(manifest_path) as f:
             self.manifest = json.load(f)
+
+        exclude = set(exclude_generators or [])
+        only = set(only_generators or [])
+
+        def keep(m):
+            gen = m.get("generator", "human")
+            if m["label"] == 0:
+                return True  # always keep real speech
+            if exclude and gen in exclude:
+                return False
+            if only and gen not in only:
+                return False
+            return True
+
+        if exclude or only:
+            before = len(self.manifest)
+            self.manifest = [m for m in self.manifest if keep(m)]
+            print(f"Generator filter: exclude={sorted(exclude)} only={sorted(only)} "
+                  f"({before} -> {len(self.manifest)} samples)")
 
         print(f"Loaded dataset: {len(self.manifest)} samples")
         labels = [m["label"] for m in self.manifest]
@@ -273,9 +297,18 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=30, help="Training epochs")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--cnn_only", action="store_true", help="Train only the MelCNN (skip wav2vec2)")
+    parser.add_argument("--holdout_generator", type=str, default=None,
+                        help="Generator to EXCLUDE from training (e.g. 'xtts_v2') so it stays "
+                             "unseen — then evaluate on it to PROVE cross-generator generalization")
     args = parser.parse_args()
 
-    dataset = VoiceShieldDataset(args.data_dir)
+    exclude = [args.holdout_generator] if args.holdout_generator else None
+    if exclude:
+        print(f"\n[cross-generator] Holding out '{args.holdout_generator}' from training.\n"
+              f"After training, run:\n"
+              f"  python -m ai.train.evaluate --data_dir {args.data_dir} "
+              f"--weights_dir {args.output_dir} --only_generator {args.holdout_generator}\n")
+    dataset = VoiceShieldDataset(args.data_dir, exclude_generators=exclude)
 
     # Train CNN first (faster, no large backbone needed)
     train_mel_cnn(dataset, epochs=args.epochs, batch_size=args.batch_size, output_dir=args.output_dir)

@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Risk Fusion Settings
     RISK_THRESHOLD: float = 0.70
 
+    # Layer 2 (conversation intent). ASR is heavy — off by default so the
+    # realtime path stays light; enable on a machine with Whisper installed.
+    ENABLE_LAYER2_ASR: bool = False
+    ASR_EVERY_N_WINDOWS: int = 3
+
     # Database (PostgreSQL in production, sqlite for local tests)
     DATABASE_URL: str = "sqlite+aiosqlite:///./voiceshield.db"
 

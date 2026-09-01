@@ -23,13 +23,23 @@ from ai.preprocessing import preprocess_tensor, TELEPHONY_SR, WINDOW_SAMPLES_8K
 from ai.layer1_authenticity import Layer1Detector
 
 
-def load_evaluation_data(data_dir: str) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[int]]:
-    """Load audio files and labels from the manifest."""
+def load_evaluation_data(data_dir: str, only_generator: str = None) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[int]]:
+    """
+    Load audio files and labels from the manifest.
+
+    only_generator: if set, keep only fakes from THIS generator (reals always
+        kept). Use it to measure cross-generator generalization on a generator
+        that was held out of training.
+    """
     data_path = Path(data_dir)
     manifest_path = data_path / "manifest.json"
 
     with open(manifest_path) as f:
         manifest = json.load(f)
+
+    if only_generator:
+        manifest = [m for m in manifest
+                    if m["label"] == 0 or m.get("generator") == only_generator]
 
     waveforms_16k = []
     mels = []
@@ -69,10 +79,12 @@ def compute_eer(y_true: np.ndarray, y_scores: np.ndarray) -> Tuple[float, float]
     return eer, eer_threshold
 
 
-def evaluate(data_dir: str, weights_dir: str, device: str = "cpu"):
+def evaluate(data_dir: str, weights_dir: str, device: str = "cpu", only_generator: str = None):
     """Run full evaluation and print results."""
     print("=" * 60)
     print("VoiceShield — Model Evaluation")
+    if only_generator:
+        print(f"CROSS-GENERATOR mode: fakes limited to unseen generator '{only_generator}'")
     print("=" * 60)
 
     # Load model
@@ -89,7 +101,7 @@ def evaluate(data_dir: str, weights_dir: str, device: str = "cpu"):
 
     # Load data
     print(f"\nLoading evaluation data from {data_dir}...")
-    waveforms_16k, mels, labels = load_evaluation_data(data_dir)
+    waveforms_16k, mels, labels = load_evaluation_data(data_dir, only_generator=only_generator)
     print(f"  Loaded {len(labels)} samples (Real: {labels.count(0)}, Fake: {labels.count(1)})")
 
     if len(labels) == 0:
@@ -145,11 +157,28 @@ def evaluate(data_dir: str, weights_dir: str, device: str = "cpu"):
         print("  ROC-AUC: (install scikit-learn for this metric)")
 
     # EER
+    eer, eer_threshold = None, None
     try:
         eer, eer_threshold = compute_eer(y_true, y_scores)
         print(f"  EER: {eer*100:.2f}% (threshold={eer_threshold:.4f})")
     except ImportError:
         print("  EER: (install scikit-learn for this metric)")
+
+    # E5 — calibrate the operating threshold from the standard (mixed) eval and
+    # persist it so the detector can replace its hardcoded 0.7/0.4 cut-offs.
+    if eer_threshold is not None and not only_generator:
+        try:
+            thr_path = os.path.join(weights_dir, "threshold.json")
+            with open(thr_path, "w") as f:
+                json.dump({
+                    "eer_threshold": round(float(eer_threshold), 4),
+                    "eer": round(float(eer), 4),
+                    "n_samples": int(len(labels)),
+                    "note": "Operating threshold at Equal Error Rate; use in Layer1Detector verdict.",
+                }, f, indent=2)
+            print(f"  ✓ Saved calibrated threshold -> {thr_path}")
+        except Exception as e:
+            print(f"  [WARN] could not save threshold.json: {e}")
 
     # Latency
     latencies_np = np.array(latencies)
@@ -181,6 +210,9 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, default="./data", help="Dataset directory")
     parser.add_argument("--weights_dir", type=str, default="./ai/models", help="Model weights directory")
     parser.add_argument("--device", type=str, default="cpu", help="cpu or cuda")
+    parser.add_argument("--only_generator", type=str, default=None,
+                        help="Evaluate only on fakes from this (held-out) generator to measure "
+                             "cross-generator generalization, e.g. --only_generator xtts_v2")
     args = parser.parse_args()
 
-    evaluate(args.data_dir, args.weights_dir, args.device)
+    evaluate(args.data_dir, args.weights_dir, args.device, only_generator=args.only_generator)

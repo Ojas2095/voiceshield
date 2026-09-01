@@ -7,11 +7,14 @@ WS /ws/stream/{call_id}
 
 Full pipeline per frame:
   raw bytes → VADPipeline (ring-buffer, telephony-sim, Silero VAD)
-    → speech-active windows → classifier.infer()
-      → ConfidenceFusion.update()
-        → persist Detection + EvidenceLog
-          → push risk_update JSON to client
-            → if rolling score > hold_threshold → auto-trigger hold
+    → speech-active windows → classifier.infer()               [Layer 1]
+      → every ASR_INTERVAL windows: Transcriber → score_intent [Layer 2]
+        → score_call_signals                                    [Layer 3]
+          → fuse_layers(voice, intent, signal)                  [Fusion]
+            → ConfidenceFusion.update(fused)
+              → persist Detection + EvidenceLog
+                → push risk_update JSON to client
+                  → if rolling score > hold_threshold → auto-trigger hold
 """
 import asyncio
 import json
@@ -19,7 +22,9 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+import numpy as np
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.inference as inf
@@ -30,9 +35,18 @@ from app.inference import ConfidenceFusion
 from app.models import Call, Detection, EvidenceLog, TransactionHold
 from app.schemas import HoldTriggered, RiskUpdate, VADUpdate, to_verdict
 from app.vad import VADPipeline
-from sqlalchemy import select, desc
 
-# —— SECURITY INVARIANT ————————————————————————————————————————————————————————————————————————
+# ── Intelligence layers (lazy-import friendly) ────────────────────────────────
+try:
+    from intelligence.asr import Transcriber
+    from intelligence.call_signals import score_call_signals
+    from intelligence.intent_classifier import score_intent
+    from intelligence.fusion import fuse_layers
+    _INTELLIGENCE_AVAILABLE = True
+except ImportError:
+    _INTELLIGENCE_AVAILABLE = False
+
+# —— SECURITY INVARIANT ——————————————————————————————————————————————————————————————————————————
 # Raw audio is NEVER persisted to disk or DB (voice = biometric data, DPDP 2023).
 # Audio frames exist only in memory for the duration of one 2-second window.
 # Only hashes + verdicts + scores + metadata are stored.
@@ -42,6 +56,9 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 router = APIRouter(tags=["websocket"])
+
+# Run ASR + intent every N speech-active windows (~2s each → every ~10s of speech)
+_ASR_INTERVAL = 5
 
 
 @router.websocket("/ws/stream/{call_id}")
@@ -56,6 +73,15 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
     fusion = ConfidenceFusion()
     pipeline = VADPipeline(str(call_id))
     hold_already_triggered = False
+
+    # Layer 2/3 state
+    transcriber = Transcriber() if _INTELLIGENCE_AVAILABLE else None
+    speech_window_count = 0          # counts speech-active windows since last ASR run
+    speech_buffer: list[np.ndarray] = []  # accumulate audio for ASR
+    last_intent_risk: float = 0.0
+    last_signal_risk: float = 0.0
+    last_language: str = "unknown"
+    last_matched_reasons: list[str] = []
 
     try:
         # Validate the call exists
@@ -78,7 +104,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 await websocket.send_json({"type": "ping"})
                 continue
 
-            # Process through the VAD pipeline (runs synchronous telephony + VAD in threadpool)
+            # Process through the VAD pipeline
             loop = asyncio.get_running_loop()
             windows = await loop.run_in_executor(
                 inf._executor,
@@ -94,17 +120,50 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 if not is_speech:
                     continue  # Don't run inference on silence
 
-                # Inference (in-process, off event loop)
+                # ── Layer 1: Voice authenticity ──────────────────────────────
                 classifier = inf.classifier
                 if classifier is None:
                     continue
 
                 spoof_prob = await classifier.infer(window)
-                fused_score = fusion.update(spoof_prob)
+                speech_window_count += 1
+
+                # Accumulate audio for periodic ASR (keep last 30s worth)
+                speech_buffer.append(window)
+                if len(speech_buffer) > 15:
+                    speech_buffer.pop(0)
+
+                # ── Layer 2 + 3: Every ASR_INTERVAL speech windows ───────────
+                if _INTELLIGENCE_AVAILABLE and speech_window_count % _ASR_INTERVAL == 0:
+                    asr_audio = np.concatenate(speech_buffer)
+                    intent_result, signal_result, language = await loop.run_in_executor(
+                        inf._executor,
+                        _run_intelligence_sync,
+                        asr_audio,
+                        transcriber,
+                    )
+                    last_intent_risk = float(intent_result.get("intent_risk", 0.0))
+                    last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
+                    last_language = language or "unknown"
+
+                    # Merge matched reasons from both layers
+                    intent_matches = intent_result.get("matched", [])
+                    signal_reasons = signal_result.get("reasons", [])
+                    last_matched_reasons = (intent_matches + signal_reasons)[:6]  # cap for UI
+
+                # ── Full 3-layer fusion ──────────────────────────────────────
+                if _INTELLIGENCE_AVAILABLE:
+                    three_layer_score = fuse_layers(
+                        voice_authenticity=spoof_prob,
+                        intent_risk=last_intent_risk,
+                        call_signal_risk=last_signal_risk,
+                    )
+                else:
+                    three_layer_score = spoof_prob
+
+                fused_score = fusion.update(three_layer_score)
                 is_flagged = spoof_prob >= settings.flag_threshold
                 model_ver = getattr(classifier, "model_version", settings.model_version)
-
-                # Persist detection + evidence in one DB session
                 verdict = to_verdict(fused_score)
 
                 detection_id, hold_data = await _persist_detection(
@@ -132,7 +191,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     )
                     await _send_json(websocket, hold_msg.model_dump())
 
-                # Push risk update with canonical verdict field
+                # Push risk update — all three layers now included
                 risk_msg = RiskUpdate(
                     window_start_ms=start_ms,
                     window_end_ms=end_ms,
@@ -142,7 +201,10 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     verdict=verdict,
                     vad_active=is_speech,
                     model_version=model_ver,
-                    # language_detected will be populated by Layer 2 (ASR) later
+                    language_detected=last_language,
+                    intent_risk=round(last_intent_risk, 4),
+                    call_signal_risk=round(last_signal_risk, 4),
+                    matched_reasons=last_matched_reasons,
                 )
                 await _send_json(websocket, risk_msg.model_dump())
 
@@ -157,6 +219,34 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
     finally:
         logger.info("WS handler exiting for call_id=%s", call_id)
 
+
+# ── Intelligence helper (synchronous, runs in ThreadPoolExecutor) ─────────────
+
+def _run_intelligence_sync(
+    audio: np.ndarray,
+    transcriber,
+) -> tuple[dict, dict, str | None]:
+    """
+    Synchronous wrapper for ASR → intent + call signals.
+    Called from run_in_executor so it never blocks the event loop.
+
+    Returns: (intent_result_dict, signal_result_dict, language_str)
+    """
+    asr_out = transcriber.transcribe_array(audio, sample_rate=16000)
+    transcript = asr_out.get("text", "") or ""
+    language = asr_out.get("language")
+
+    intent_result = score_intent(transcript) if transcript.strip() else {
+        "intent_risk": 0.0, "categories": {}, "matched": [], "top_category": None
+    }
+
+    # Layer 3: no caller metadata in streaming mode — returns very low base risk
+    signal_result = score_call_signals({})
+
+    return intent_result, signal_result, language
+
+
+# ── DB persistence ─────────────────────────────────────────────────────────────
 
 async def _persist_detection(
     call_id: uuid.UUID,

@@ -3,7 +3,7 @@ import { useVoiceShield } from '../hooks/useVoiceShield';
 import { Shield, ShieldAlert, ShieldCheck, Activity, Mic, MicOff } from 'lucide-react';
 
 export default function Dashboard() {
-  const { isMonitoring, startMonitoring, stopMonitoring, data, logs } = useVoiceShield('demo-call');
+  const { isMonitoring, micError, holdAlert, startMonitoring, stopMonitoring, data, logs } = useVoiceShield();
   
   const getVerdictColor = (verdict: string) => {
     switch (verdict) {
@@ -22,13 +22,23 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-      {/* Alert Banner */}
+      {/* Fraud Alert Banner */}
       <div className={`absolute top-0 left-0 right-0 z-50 transition-transform duration-500 ${data.verdict === 'FRAUD' ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="bg-rose-500 text-white px-4 py-3 flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20">
           <ShieldAlert className="w-5 h-5 animate-pulse" />
           <span className="font-bold tracking-wider">FRAUD DETECTED: Deepfake or Malicious Intent Identified</span>
         </div>
       </div>
+
+      {/* Hold Alert Banner */}
+      {holdAlert && (
+        <div className="absolute top-12 left-0 right-0 z-50">
+          <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 shadow-md shadow-amber-500/20">
+            <ShieldAlert className="w-4 h-4" />
+            <span className="text-sm font-semibold">{holdAlert}</span>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 flex justify-between items-center sticky top-0 z-40">
@@ -40,10 +50,25 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {micError && (
+            <div className="text-rose-500 text-xs font-semibold px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/20">
+              {micError}
+            </div>
+          )}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800">
             <div className={`w-2 h-2 rounded-full ${isMonitoring ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse' : 'bg-slate-600'}`} />
             <span className="text-sm font-medium text-slate-300">{isMonitoring ? 'LIVE' : 'INACTIVE'}</span>
           </div>
+          {isMonitoring && (
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors duration-300 ${
+              data.vad_active
+                ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
+                : 'text-slate-500 bg-slate-900 border-slate-800'
+            }`}>
+              <Activity className="w-3 h-3" />
+              {data.vad_active ? 'VOICE' : 'SILENCE'}
+            </div>
+          )}
           <button
             onClick={isMonitoring ? stopMonitoring : startMonitoring}
             className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
@@ -111,7 +136,7 @@ export default function Dashboard() {
             {/* Layer Breakdown */}
             <div className="w-full mt-8 space-y-4">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Voice Authenticity</span>
+                <span className="text-slate-400">Voice Authenticity (L1)</span>
                 <span className="font-mono text-slate-200">{Math.round(data.layers.voice_authenticity)}%</span>
               </div>
               <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
@@ -119,11 +144,19 @@ export default function Dashboard() {
               </div>
               
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Intent Risk</span>
+                <span className="text-slate-400">Intent Risk (L2)</span>
                 <span className="font-mono text-slate-200">{Math.round(data.layers.intent_risk)}%</span>
               </div>
               <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                 <div className="bg-indigo-500 h-full transition-all duration-500" style={{ width: `${data.layers.intent_risk}%` }} />
+              </div>
+
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-400">Call Signals (L3)</span>
+                <span className="font-mono text-slate-200">{Math.round(data.layers.call_signal_risk)}%</span>
+              </div>
+              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${data.layers.call_signal_risk}%` }} />
               </div>
             </div>
           </div>

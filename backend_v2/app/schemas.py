@@ -56,6 +56,10 @@ class RiskUpdate(BaseModel):
     vad_active: bool = True
     model_version: str
     language_detected: str = "unknown"  # populated by Layer 2 (ASR) when available
+    # ── Layer 2 & 3 fields (populated once ASR + intent + signals are run) ───
+    intent_risk: float = 0.0
+    call_signal_risk: float = 0.0
+    matched_reasons: list[str] = []    # human-readable evidence for the UI
 
 
 class HoldTriggered(BaseModel):

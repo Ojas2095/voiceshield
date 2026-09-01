@@ -117,7 +117,12 @@ class ProductionClassifier(SpoofClassifier):
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="inference")
 
         # Initialize the detector
-        self.detector = Layer1Detector(device=self.device)
+        # Model name is configurable (E4): set WAV2VEC_MODEL_NAME=facebook/wav2vec2-base
+        # in .env to cut latency for real-time if the large XLSR model is too slow on CPU.
+        self.detector = Layer1Detector(
+            wav2vec_model_name=settings.WAV2VEC_MODEL_NAME,
+            device=self.device,
+        )
 
         # Load trained weights if they exist
         head_path = os.path.join(settings.MODEL_WEIGHTS_DIR, "best_wav2vec_head.pt")

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # ── Database ────────────────────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://voiceshield:voiceshield@localhost:5432/voiceshield"
+    database_url: str = "sqlite+aiosqlite:///./voiceshield.db"
 
     # ── Model ───────────────────────────────────────────────────────────────────
     # wav2vec2-base (768-dim) — fast enough for real-time inference.

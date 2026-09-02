@@ -30,6 +30,17 @@ settings = get_settings()
 async def lifespan(application: FastAPI):
     """FastAPI lifespan — runs once at startup, then yields for the app lifetime."""
     logger.info("=== VoiceShield starting up ===")
+    
+    # Ensure database tables exist
+    try:
+        from app.database import Base, engine
+        import app.models  # load models
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database schema initialized.")
+    except Exception as e:
+        logger.warning("Could not auto-create tables: %s", e)
+
     inf.classifier = inf.load_classifier()
     logger.info(
         "Classifier ready: %s on %s",

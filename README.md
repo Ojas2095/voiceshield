@@ -61,16 +61,22 @@ India lost over **₹1,750 Crore in 2024–2025** to sophisticated cyber-extorti
 
 ---
 
-## 📊 Key Benchmark Metrics (Evaluated on NVIDIA GPU)
+## 📊 Key Benchmark Metrics
 
-| Metric | Result | Target Benchmark | Status |
+| Metric | Result | Target | Status |
 | :--- | :---: | :---: | :---: |
-| **Layer 1 Accuracy** | **100.0%** | > 95% | ✅ Exceeded |
-| **Equal Error Rate (EER)** | **0.00%** | < 3% | ✅ Exceeded |
-| **Inference Latency** | **2.33 ms** (Mean) | < 500 ms | ⚡ 99.5% Headroom |
-| **Layer 2 Intent F1-Score** | **0.9691** | > 0.90 | ✅ Exceeded |
-| **Multilingual Support** | **English, Hindi, Hinglish** | Indian Telecom | ✅ 100% Hinglish Accuracy |
-| **Evidence Chain Validity** | **SHA-256 Merkle Hash Chain** | BSA 2023 §63 | ⚖️ Legally Admissible |
+| **Layer 1 EER (held-out test)** | _re-measuring_ † | < 8% | 🔄 In progress |
+| **Cross-generator EER (unseen TTS)** | _re-measuring_ † | < 15% | 🔄 In progress |
+| **Inference Latency** | MelCNN ≈3  ms · dual-branch TBD | < 500 ms | ⚡ Headroom |
+| **Layer 2 Intent F1-Score** | **0.969** | > 0.90 | ✅ Exceeded |
+| **Multilingual Support** | English · Hindi · Hinglish | Indian telecom | ✅ Supported |
+| **Evidence Chain** | Ed25519-signed SHA-256 hash-chain | BSA 2023 §63 | ⚖️ Tamper-evident + non-repudiable |
+
+> † **Honest-metrics note:** earlier 100% accuracy / 0% EER figures were measured on the
+> training data (evaluation leakage). The pipeline now trains on `manifest_train.json` and
+> evaluates on a held-out `manifest_test.json`, plus a **held-out generator** for a true
+> cross-generator number. Report those figures here after the next GPU run — a defensible
+> 3–8% EER beats an unbelievable 0%.
 
 ---
 

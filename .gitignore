@@ -2,39 +2,44 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pytest_cache/
 
 # Virtual environments
 .venv/
 venv/
 env/
 
-# Environment variables (never commit secrets)
+# Environment variables (never commit live secrets)
 .env
+.env.local
+.env.*.local
+.env.development
+.env.production
 
 # Datasets (fetched/generated locally — never commit, can be many GB)
 data/
 !data/.gitkeep
+*.wav
 
-# Model weights (too large for git — share via Drive/USB)
-ai/models/*.pt
-ai/models/*.bin
-ai/models/*.safetensors
-ai/models/*.onnx
+# Model binary weights (keep threshold.json committed)
+*.pt
+*.bin
+*.safetensors
+*.onnx
 
 # Signing keys
 keys/
 
-# Node
-frontend/node_modules/
+# Node / Next.js
+node_modules/
+**/node_modules/
 frontend/.next/
 frontend/out/
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
 *.swp
-
-# OS
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -42,3 +47,4 @@ desktop.ini
 # Database files
 *.db
 *.sqlite3
+test_*.db

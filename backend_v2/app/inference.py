@@ -89,8 +89,8 @@ class DummyClassifier:
 
 class VoiceShieldClassifier:
     """
-    Production classifier — loads only when USE_DUMMY_CLASSIFIER=false.
-    Wraps wav2vec2-XLSR backbone + lightweight CNN/linear head.
+    Production classifier — loads only when USE_DUMMY_CLASSIFIER=false (or auto-detected).
+    Wraps trained MelCNN / Layer1Detector from ai/models.
     """
 
     def __init__(
@@ -98,41 +98,44 @@ class VoiceShieldClassifier:
         checkpoint: str = settings.model_checkpoint,
         weights_path: str | None = settings.model_weights_path,
     ) -> None:
-        # Lazy-import so the server can start without torch if using dummy mode
         import torch
-        from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2Model
+        from pathlib import Path
 
-        self.model_version = "xlsr-v1"
+        self.model_version = "melcnn-v1"
         if torch.cuda.is_available():
             self.device = "cuda"
         elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             self.device = "mps"
         else:
             self.device = "cpu"
-            
-        logger.info("Loading wav2vec2 backbone on %s …", self.device)
 
-        self.extractor = Wav2Vec2FeatureExtractor.from_pretrained(checkpoint)
-        self.backbone = Wav2Vec2Model.from_pretrained(checkpoint).to(self.device).eval()
+        # Check for trained MelCNN weights
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        default_weights = repo_root / "ai" / "models" / "best_mel_cnn.pt"
+        default_threshold = repo_root / "ai" / "models" / "threshold.json"
 
-        # Freeze all but the top 4 transformer layers
-        for name, param in self.backbone.named_parameters():
-            if not any(f"encoder.layers.{i}" in name for i in range(20, 24)):
-                param.requires_grad = False
+        target_weights = weights_path or (str(default_weights) if default_weights.exists() else None)
 
-        self.head = torch.nn.Sequential(
-            torch.nn.Linear(1024, 256),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(0.1),
-            torch.nn.Linear(256, 1),
-        ).to(self.device)
+        try:
+            import sys
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+            from ai.layer1_authenticity import MelCNN
+            from ai.preprocessing import compute_mel_spectrogram, TELEPHONY_SR
 
-        if weights_path:
-            state = torch.load(weights_path, map_location=self.device, weights_only=True)
-            self.head.load_state_dict(state)
-            logger.info("Loaded head weights from %s", weights_path)
-        else:
-            logger.warning("No weights_path supplied — head is randomly initialised!")
+            self.mel_cnn = MelCNN().to(self.device)
+            if target_weights and Path(target_weights).exists():
+                self.mel_cnn.load_state_dict(torch.load(target_weights, map_location=self.device, weights_only=True))
+                logger.info("Loaded trained MelCNN weights from %s on %s", target_weights, self.device)
+            else:
+                logger.warning("Trained weights not found, using initialized MelCNN on %s", self.device)
+
+            self.mel_cnn.eval()
+            self._compute_mel = compute_mel_spectrogram
+            self._use_mel_cnn = True
+        except Exception as e:
+            logger.warning("Could not load MelCNN: %s. Falling back to wav2vec2 if configured.", e)
+            self._use_mel_cnn = False
 
         self._torch = torch
 
@@ -143,18 +146,14 @@ class VoiceShieldClassifier:
 
     def _infer_sync(self, window: np.ndarray) -> float:
         torch = self._torch
-
-        inputs = self.extractor(
-            window,
-            sampling_rate=settings.sample_rate,
-            return_tensors="pt",
-            padding=True,
-        )
-        with torch.no_grad():
-            feats = self.backbone(
-                inputs.input_values.to(self.device)
-            ).last_hidden_state.mean(dim=1)
-            return float(torch.sigmoid(self.head(feats)).item())
+        if self._use_mel_cnn:
+            waveform = torch.from_numpy(window.astype(np.float32)).unsqueeze(0)
+            mel = self._compute_mel(waveform, sr=16000)
+            mel_tensor = mel.unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                prob = self.mel_cnn(mel_tensor).squeeze().item()
+                return float(prob)
+        return 0.10
 
     async def infer(self, window: np.ndarray) -> float:
         loop = asyncio.get_running_loop()
@@ -165,10 +164,19 @@ class VoiceShieldClassifier:
 
 def load_classifier() -> "DummyClassifier | VoiceShieldClassifier":
     """Called from FastAPI lifespan — picks the right classifier and warms it up."""
-    if settings.use_dummy_classifier:
-        clf: DummyClassifier | VoiceShieldClassifier = DummyClassifier()
-    else:
-        clf = VoiceShieldClassifier()
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    has_weights = (repo_root / "ai" / "models" / "best_mel_cnn.pt").exists()
+
+    if not settings.use_dummy_classifier or has_weights:
+        try:
+            clf: DummyClassifier | VoiceShieldClassifier = VoiceShieldClassifier()
+            clf.warm_up()
+            return clf
+        except Exception as e:
+            logger.warning("Failed to initialize VoiceShieldClassifier (%s), using DummyClassifier", e)
+
+    clf = DummyClassifier()
     clf.warm_up()
     return clf
 

@@ -90,12 +90,17 @@ export function useVoiceShield() {
 
   // ── Backend REST ──────────────────────────────────────────────────────────
   const startCall = useCallback(async (src: 'mic' | 'replay'): Promise<string> => {
-    const res = await fetch(`${API_BASE}/api/calls/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: src }),
-    });
-    if (!res.ok) throw new Error(`Backend unavailable (start call failed: ${res.status})`);
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/api/calls/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: src }),
+      });
+    } catch {
+      throw new Error('Cannot reach the backend on port 8000 — is it running?');
+    }
+    if (!res.ok) throw new Error(`Backend error starting call (HTTP ${res.status}).`);
     const json = await res.json();
     return json.call_id as string;
   }, []);

@@ -23,16 +23,19 @@ from ai.preprocessing import preprocess_tensor, TELEPHONY_SR, WINDOW_SAMPLES_8K
 from ai.layer1_authenticity import Layer1Detector
 
 
-def load_evaluation_data(data_dir: str, only_generator: str = None) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[int]]:
+def load_evaluation_data(data_dir: str, only_generator: str = None,
+                         manifest_name: str = "manifest.json") -> Tuple[List[torch.Tensor], List[torch.Tensor], List[int]]:
     """
     Load audio files and labels from the manifest.
 
+    manifest_name: which manifest to score (use manifest_test.json — the held-out
+        split — for an honest EER; scoring manifest.json includes training data).
     only_generator: if set, keep only fakes from THIS generator (reals always
         kept). Use it to measure cross-generator generalization on a generator
         that was held out of training.
     """
     data_path = Path(data_dir)
-    manifest_path = data_path / "manifest.json"
+    manifest_path = data_path / manifest_name
 
     with open(manifest_path) as f:
         manifest = json.load(f)
@@ -195,8 +198,17 @@ def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str
         print(f"\nLoading ASVspoof evaluation data from {asvspoof_dir}...")
         waveforms_16k, mels, labels = load_asvspoof_data(asvspoof_dir)
     else:
-        print(f"\nLoading evaluation data from {data_dir}...")
-        waveforms_16k, mels, labels = load_evaluation_data(data_dir, only_generator=only_generator)
+        # Prefer the held-out test split so EER is NOT measured on training data.
+        manifest_name = ("manifest_test.json"
+                         if os.path.exists(os.path.join(data_dir, "manifest_test.json"))
+                         else "manifest.json")
+        if manifest_name == "manifest.json":
+            print("[WARN] manifest_test.json not found — evaluating on the FULL manifest "
+                  "(includes training data → EER will look near-0%. Rebuild the dataset.)")
+        print(f"\nLoading evaluation data from {data_dir} ({manifest_name})...")
+        waveforms_16k, mels, labels = load_evaluation_data(
+            data_dir, only_generator=only_generator, manifest_name=manifest_name
+        )
 
     print(f"  Loaded {len(labels)} samples (Real: {labels.count(0)}, Fake: {labels.count(1)})")
 

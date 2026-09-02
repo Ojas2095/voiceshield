@@ -212,10 +212,34 @@ def build_dataset(
         if (fake_count + 1) % 50 == 0:
             print(f"  Generated {fake_count + 1} fake samples")
 
-    # Save manifest
+    # Save full manifest
     manifest_path = output / "manifest.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
+
+    # Held-out train/test split (stratified by label, fixed seed) so evaluation
+    # is done on data the model NEVER trained on — otherwise EER is ~0% (leakage).
+    rng = random.Random(42)
+    reals = [m for m in manifest if m["label"] == 0]
+    fakes = [m for m in manifest if m["label"] == 1]
+
+    def _split(items):
+        items = items[:]
+        rng.shuffle(items)
+        k = int(len(items) * 0.2)          # 20% held out for test
+        return items[k:], items[:k]
+
+    tr_r, te_r = _split(reals)
+    tr_f, te_f = _split(fakes)
+    train_manifest = tr_r + tr_f
+    test_manifest = te_r + te_f
+    rng.shuffle(train_manifest)
+    rng.shuffle(test_manifest)
+    with open(output / "manifest_train.json", "w") as f:
+        json.dump(train_manifest, f, indent=2)
+    with open(output / "manifest_test.json", "w") as f:
+        json.dump(test_manifest, f, indent=2)
+    print(f"  Held-out split: train={len(train_manifest)}  test={len(test_manifest)}")
 
     print(f"\n=== Dataset Complete ===")
     print(f"  Real samples: {sum(1 for m in manifest if m['label'] == 0)}")

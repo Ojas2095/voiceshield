@@ -35,17 +35,19 @@ from ai.layer1_authenticity import Wav2Vec2ClassifierHead, MelCNN
 class VoiceShieldDataset(Dataset):
     """PyTorch dataset loading from the manifest.json created by build_dataset.py."""
 
-    def __init__(self, data_dir: str, exclude_generators=None, only_generators=None):
+    def __init__(self, data_dir: str, exclude_generators=None, only_generators=None,
+                 manifest_name: str = "manifest.json"):
         """
         exclude_generators: list of generator names to DROP (e.g. hold out a
             generator from training so it stays 'unseen' for cross-generator eval).
         only_generators: if set, keep ONLY these generators (reals are always kept).
+        manifest_name: which manifest file to load (train uses manifest_train.json).
         """
         self.data_dir = Path(data_dir)
-        manifest_path = self.data_dir / "manifest.json"
+        manifest_path = self.data_dir / manifest_name
 
         if not manifest_path.exists():
-            raise FileNotFoundError(f"manifest.json not found in {data_dir}")
+            raise FileNotFoundError(f"{manifest_name} not found in {data_dir}")
 
         with open(manifest_path) as f:
             self.manifest = json.load(f)
@@ -321,7 +323,12 @@ if __name__ == "__main__":
               f"After training, run:\n"
               f"  python -m ai.train.evaluate --data_dir {args.data_dir} "
               f"--weights_dir {args.output_dir} --only_generator {args.holdout_generator}\n")
-    dataset = VoiceShieldDataset(args.data_dir, exclude_generators=exclude)
+    # Prefer the held-out training split so evaluation stays honest.
+    train_manifest = "manifest_train.json" if (Path(args.data_dir) / "manifest_train.json").exists() else "manifest.json"
+    if train_manifest == "manifest.json":
+        print("[WARN] manifest_train.json not found — training on full manifest "
+              "(rebuild dataset to get an honest held-out test set).")
+    dataset = VoiceShieldDataset(args.data_dir, exclude_generators=exclude, manifest_name=train_manifest)
 
     # Train CNN first (faster, no large backbone needed)
     train_mel_cnn(dataset, epochs=args.epochs, batch_size=args.batch_size, output_dir=args.output_dir)

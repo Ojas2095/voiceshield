@@ -125,6 +125,8 @@ class EvidenceLog(Base):
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     entry_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Ed25519 signature over entry_hash (non-repudiation); nullable for legacy rows.
+    signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

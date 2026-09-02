@@ -89,19 +89,27 @@ class DummyClassifier:
 
 class VoiceShieldClassifier:
     """
-    Production classifier — loads only when USE_DUMMY_CLASSIFIER=false (or auto-detected).
-    Wraps trained MelCNN / Layer1Detector from ai/models.
+    Production Layer-1 classifier — the real dual-branch detector.
+
+    Uses ai.layer1_authenticity.Layer1Detector, which fuses:
+      • wav2vec2-XLSR + trained head  (acoustic branch)
+      • MelCNN over the mel-spectrogram (spectral-artifact branch)
+
+    Mode is chosen by which weights are present in ai/models/:
+      • both best_wav2vec_head.pt AND best_mel_cnn.pt → true DUAL-BRANCH
+      • only best_mel_cnn.pt                          → MelCNN-only (fast fallback)
+      • neither                                        → untrained (scores unreliable)
+
+    This keeps the heavy wav2vec2-large model out of memory until its trained
+    head actually exists, so integration never blocks on the big download.
+    Returns a single float P(fake) to preserve the websocket contract.
     """
 
-    def __init__(
-        self,
-        checkpoint: str = settings.model_checkpoint,
-        weights_path: str | None = settings.model_weights_path,
-    ) -> None:
+    def __init__(self, weights_path: str | None = settings.model_weights_path) -> None:
+        import sys
         import torch
         from pathlib import Path
 
-        self.model_version = "melcnn-v1"
         if torch.cuda.is_available():
             self.device = "cuda"
         elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -109,51 +117,67 @@ class VoiceShieldClassifier:
         else:
             self.device = "cpu"
 
-        # Check for trained MelCNN weights
         repo_root = Path(__file__).resolve().parent.parent.parent
-        default_weights = repo_root / "ai" / "models" / "best_mel_cnn.pt"
-        default_threshold = repo_root / "ai" / "models" / "threshold.json"
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from ai.preprocessing import preprocess_tensor
 
-        target_weights = weights_path or (str(default_weights) if default_weights.exists() else None)
+        models_dir = repo_root / "ai" / "models"
+        head_w = Path(weights_path) if weights_path else models_dir / "best_wav2vec_head.pt"
+        cnn_w = models_dir / "best_mel_cnn.pt"
+        wav_name = settings.model_checkpoint  # e.g. facebook/wav2vec2-large-xlsr-53 (or -base for speed)
 
-        try:
-            import sys
-            if str(repo_root) not in sys.path:
-                sys.path.insert(0, str(repo_root))
-            from ai.layer1_authenticity import MelCNN
-            from ai.preprocessing import compute_mel_spectrogram, TELEPHONY_SR
-
-            self.mel_cnn = MelCNN().to(self.device)
-            if target_weights and Path(target_weights).exists():
-                self.mel_cnn.load_state_dict(torch.load(target_weights, map_location=self.device, weights_only=True))
-                logger.info("Loaded trained MelCNN weights from %s on %s", target_weights, self.device)
-            else:
-                logger.warning("Trained weights not found, using initialized MelCNN on %s", self.device)
-
-            self.mel_cnn.eval()
-            self._compute_mel = compute_mel_spectrogram
-            self._use_mel_cnn = True
-        except Exception as e:
-            logger.warning("Could not load MelCNN: %s. Falling back to wav2vec2 if configured.", e)
-            self._use_mel_cnn = False
-
+        self._preprocess = preprocess_tensor
         self._torch = torch
+        self._mode = "untrained"
+        self.detector = None
+        self.mel_cnn = None
+
+        if head_w.exists() and cnn_w.exists():
+            # True dual-branch (wav2vec2 loads here — heavy, but the head is trained).
+            from ai.layer1_authenticity import Layer1Detector
+            self.detector = Layer1Detector(wav2vec_model_name=wav_name, device=self.device)
+            self.detector.load_weights(str(head_w), str(cnn_w))
+            self._mode = "dual"
+            self.model_version = "dualbranch-v1"  # wav2vec2 + MelCNN
+            logger.info("Loaded DUAL-BRANCH detector (wav2vec2 head + MelCNN) on %s", self.device)
+        else:
+            # MelCNN-only — do NOT load wav2vec2-large just to leave its head untrained.
+            from ai.layer1_authenticity import MelCNN
+            self.mel_cnn = MelCNN().to(self.device)
+            if cnn_w.exists():
+                self.mel_cnn.load_state_dict(
+                    torch.load(str(cnn_w), map_location=self.device, weights_only=True)
+                )
+                self._mode = "cnn"
+                self.model_version = "melcnn-v1"
+                logger.info("Loaded MelCNN-only detector (wav2vec head absent) on %s", self.device)
+            else:
+                self.model_version = "untrained-v0"
+                logger.warning("No trained weights in %s — scores are unreliable.", models_dir)
+            self.mel_cnn.eval()
+            from ai.preprocessing import compute_mel_spectrogram
+            self._compute_mel = compute_mel_spectrogram
 
     def warm_up(self) -> None:
         """Pay the cold-start cost once at server boot, not on the first live request."""
         self._infer_sync(np.zeros(32_000, dtype=np.float32))
-        logger.info("VoiceShieldClassifier warmed up on %s", self.device)
+        logger.info("VoiceShieldClassifier warmed up on %s (%s)", self.device, self.model_version)
 
     def _infer_sync(self, window: np.ndarray) -> float:
         torch = self._torch
-        if self._use_mel_cnn:
-            waveform = torch.from_numpy(window.astype(np.float32)).unsqueeze(0)
-            mel = self._compute_mel(waveform, sr=16000)
-            mel_tensor = mel.unsqueeze(0).to(self.device)
-            with torch.no_grad():
-                prob = self.mel_cnn(mel_tensor).squeeze().item()
-                return float(prob)
-        return 0.10
+        waveform = torch.from_numpy(window.astype(np.float32)).unsqueeze(0)
+
+        if self._mode == "dual":
+            chunk = self._preprocess(waveform, source_sr=16000, apply_degradation=False)
+            result = self.detector.predict(chunk.waveform_16k, chunk.mel_spectrogram)
+            return float(result["p_fake"])
+
+        # MelCNN-only path
+        mel = self._compute_mel(waveform, sr=16000)
+        mel_tensor = mel.unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            return float(self.mel_cnn(mel_tensor).squeeze().item())
 
     async def infer(self, window: np.ndarray) -> float:
         loop = asyncio.get_running_loop()

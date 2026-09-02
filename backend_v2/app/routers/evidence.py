@@ -14,6 +14,7 @@ from app.database import get_session
 from app.hash_chain import verify_chain
 from app.models import Call, EvidenceLog
 from app.schemas import EvidenceEntry, EvidenceResponse
+from app.signing import public_key_hex, verify_signature
 
 router = APIRouter(prefix="/api/calls", tags=["evidence"])
 
@@ -43,6 +44,8 @@ async def get_evidence(
         return EvidenceResponse(
             call_id=call_id,
             chain_valid=True,
+            signatures_valid=True,
+            public_key=public_key_hex(),
             entry_count=0,
             entries=[],
         )
@@ -58,6 +61,12 @@ async def get_evidence(
     ]
     is_valid = verify_chain(chain_entries)
 
+    # Ed25519 signature check — every signed row must verify against its entry_hash.
+    signatures_valid = all(
+        row.signature is not None and verify_signature(row.entry_hash, row.signature)
+        for row in rows
+    )
+
     entries = [
         EvidenceEntry(
             entry_id=row.entry_id,
@@ -66,6 +75,7 @@ async def get_evidence(
             payload=row.payload,
             entry_hash=row.entry_hash,
             prev_hash=row.prev_hash,
+            signature=row.signature,
             created_at=row.created_at,
         )
         for row in rows
@@ -74,6 +84,8 @@ async def get_evidence(
     return EvidenceResponse(
         call_id=call_id,
         chain_valid=is_valid,
+        signatures_valid=signatures_valid,
+        public_key=public_key_hex(),
         entry_count=len(entries),
         entries=entries,
     )

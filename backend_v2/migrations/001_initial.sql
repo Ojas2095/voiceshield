@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS evidence_log (
     payload      JSONB        NOT NULL,   -- all fields used in the hash
     entry_hash   CHAR(64)     NOT NULL,   -- SHA-256 hex digest
     prev_hash    CHAR(64)     NOT NULL,   -- previous entry's hash (or genesis)
+    signature    TEXT,                    -- Ed25519 signature over entry_hash (hex), non-repudiation
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 

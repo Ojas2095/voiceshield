@@ -136,11 +136,23 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 # ── Layer 2 + 3: Every ASR_INTERVAL speech windows ───────────
                 if _INTELLIGENCE_AVAILABLE and speech_window_count % _ASR_INTERVAL == 0:
                     asr_audio = np.concatenate(speech_buffer)
+                    # Clear buffer after ASR to prevent overlapping transcript evaluations
+                    speech_buffer.clear()
+
+                    # Build call metadata for Layer 3 (call signals)
+                    call_metadata = {
+                        "call_id": str(call_id),
+                        "duration_s": end_ms / 1000.0,
+                        "speech_windows": speech_window_count,
+                        "current_risk": fusion.update(spoof_prob) if speech_window_count > 1 else spoof_prob,
+                    }
+
                     intent_result, signal_result, language = await loop.run_in_executor(
                         inf._executor,
                         _run_intelligence_sync,
                         asr_audio,
                         transcriber,
+                        call_metadata,
                     )
                     last_intent_risk = float(intent_result.get("intent_risk", 0.0))
                     last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
@@ -225,6 +237,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
 def _run_intelligence_sync(
     audio: np.ndarray,
     transcriber,
+    call_metadata: dict | None = None,
 ) -> tuple[dict, dict, str | None]:
     """
     Synchronous wrapper for ASR → intent + call signals.
@@ -240,8 +253,8 @@ def _run_intelligence_sync(
         "intent_risk": 0.0, "categories": {}, "matched": [], "top_category": None
     }
 
-    # Layer 3: no caller metadata in streaming mode — returns very low base risk
-    signal_result = score_call_signals({})
+    # Layer 3: pass available call metadata (duration, window count, current risk)
+    signal_result = score_call_signals(call_metadata or {})
 
     return intent_result, signal_result, language
 

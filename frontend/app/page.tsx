@@ -1,237 +1,397 @@
 'use client';
+
 import Link from 'next/link';
-import { useVoiceShield } from '../hooks/useVoiceShield';
-import { Shield, ShieldAlert, ShieldCheck, Activity, Mic, MicOff, Hash } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  Shield, ShieldAlert, Mic, Play, Square,
+  Lock, FileText, ChevronRight, Radio, PhoneCall,
+} from 'lucide-react';
+import { useVoiceShield, type Verdict } from '../hooks/useVoiceShield';
 
-export default function Dashboard() {
-  const { isMonitoring, micError, holdAlert, startMonitoring, stopMonitoring, data, logs } = useVoiceShield();
-  
-  const getVerdictColor = (verdict: string) => {
-    switch (verdict) {
-      case 'REAL': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      case 'SUSPICIOUS': return 'text-amber-500 bg-amber-500/10 border-amber-500/20';
-      case 'FRAUD': return 'text-rose-500 bg-rose-500/10 border-rose-500/20';
-      default: return 'text-slate-400 bg-slate-800 border-slate-700';
-    }
-  };
+const DEMO_SAMPLES = [
+  { id: 'real_en', label: 'Real Voice — English', file: '/demo/real_en.wav', kind: 'real' as const },
+  { id: 'cloned_en', label: 'Cloned Voice — English', file: '/demo/cloned_en.wav', kind: 'clone' as const },
+  { id: 'real_hi', label: 'Real Voice — Hindi', file: '/demo/real_hi.wav', kind: 'real' as const },
+  { id: 'cloned_hi', label: 'Cloned Voice — Hindi', file: '/demo/cloned_hi.wav', kind: 'clone' as const },
+];
 
-  const getRiskColor = (score: number) => {
-    if (score < 40) return 'text-emerald-500';
-    if (score < 70) return 'text-amber-500';
-    return 'text-rose-500';
-  };
+function riskMeta(v: Verdict) {
+  switch (v) {
+    case 'REAL': return { label: 'LOW RISK', text: 'text-risk-low', bg: 'bg-risk-low', soft: 'bg-[#e7f4ec] border-[#bfe3cd]' };
+    case 'SUSPICIOUS': return { label: 'MEDIUM RISK', text: 'text-risk-med', bg: 'bg-risk-med', soft: 'bg-[#fbf3e2] border-[#f0dcae]' };
+    case 'FRAUD': return { label: 'HIGH RISK', text: 'text-risk-high', bg: 'bg-risk-high', soft: 'bg-[#fbeae7] border-[#f0c3bb]' };
+    default: return { label: 'AWAITING AUDIO', text: 'text-muted', bg: 'bg-muted', soft: 'bg-canvas border-line' };
+  }
+}
+
+export default function Home() {
+  const vs = useVoiceShield();
+  const started = vs.isMonitoring || vs.logs.length > 0 || vs.hold !== null;
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-      {/* Fraud Alert Banner */}
-      <div className={`absolute top-0 left-0 right-0 z-50 transition-transform duration-500 ${data.verdict === 'FRAUD' ? 'translate-y-0' : '-translate-y-full'}`}>
-        <div className="bg-rose-500 text-white px-4 py-3 flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20">
-          <ShieldAlert className="w-5 h-5 animate-pulse" />
-          <span className="font-bold tracking-wider">FRAUD DETECTED: Deepfake or Malicious Intent Identified</span>
+    <div className="min-h-screen bg-canvas text-ink">
+      <TopBar source={vs.source} started={started} onStop={vs.stop} error={vs.error} />
+      {started ? <Dashboard vs={vs} /> : <StartScreen vs={vs} />}
+    </div>
+  );
+}
+
+/* ────────────────────────────── Top bar ────────────────────────────── */
+function TopBar({ source, started, onStop, error }: any) {
+  const statusLabel = source === 'mic' ? 'LIVE' : source === 'replay' ? 'REPLAY' : 'READY';
+  const live = source !== null;
+  return (
+    <header className="bg-surface border-b border-line">
+      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <Shield className="w-5 h-5 text-brand" />
+          <span className="font-semibold text-navy tracking-tight">VoiceShield</span>
+          <span className="text-muted text-xs border-l border-line pl-2.5 ml-1 hidden sm:inline">
+            Real-Time Voice Authenticity
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link href="/evidence" className="text-sm text-brand hover:text-brand-dark flex items-center gap-1.5">
+            <FileText className="w-4 h-4" /> Evidence &amp; History
+          </Link>
+          <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md border ${
+            live ? 'text-risk-low border-[#bfe3cd] bg-[#e7f4ec]' : 'text-muted border-line bg-canvas'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-risk-low animate-pulse' : 'bg-muted'}`} />
+            {statusLabel}
+          </span>
+          {started && (
+            <button onClick={onStop}
+              className="text-sm font-medium text-risk-high border border-[#f0c3bb] bg-[#fbeae7] hover:bg-[#f7ddd7] px-3 py-1.5 rounded-md flex items-center gap-1.5">
+              <Square className="w-3.5 h-3.5" /> Stop
+            </button>
+          )}
+        </div>
+      </div>
+      {error && (
+        <div className="bg-[#fbf3e2] border-t border-[#f0dcae] text-[#8a5a10] text-sm px-6 py-2 text-center">
+          {error}
+        </div>
+      )}
+    </header>
+  );
+}
+
+/* ────────────────────────────── Start screen ────────────────────────────── */
+function StartScreen({ vs }: any) {
+  const [sample, setSample] = useState(DEMO_SAMPLES[1].id);
+  const chosen = DEMO_SAMPLES.find((s) => s.id === sample)!;
+  return (
+    <main className="max-w-3xl mx-auto px-6 py-16">
+      <div className="text-center mb-10">
+        <h1 className="text-3xl font-bold text-navy tracking-tight">VoiceShield</h1>
+        <p className="text-muted mt-2">
+          Real-time detection &amp; prevention of AI voice-cloning fraud on telephony audio.
+        </p>
+        <div className="mt-3 inline-flex items-center gap-2 text-xs text-muted">
+          <span className="font-semibold text-brand">DETECT</span><ChevronRight className="w-3 h-3" />
+          <span className="font-semibold text-risk-med">PREVENT</span><ChevronRight className="w-3 h-3" />
+          <span className="font-semibold text-evidence">PROVE</span>
         </div>
       </div>
 
-      {/* Hold Alert Banner */}
-      {holdAlert && (
-        <div className="absolute top-12 left-0 right-0 z-50">
-          <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 shadow-md shadow-amber-500/20">
-            <ShieldAlert className="w-4 h-4" />
-            <span className="text-sm font-semibold">{holdAlert}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 flex justify-between items-center sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <Shield className="w-8 h-8 text-indigo-500" />
-          <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">VoiceShield</h1>
-            <p className="text-xs text-slate-400 uppercase tracking-widest">SIH 2026 Core Module</p>
-          </div>
-          <Link
-            href="/evidence"
-            className="ml-4 flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-400 border border-slate-700 hover:border-indigo-500/40 px-2.5 py-1.5 rounded-md transition-colors"
-          >
-            <Hash className="w-3.5 h-3.5" /> Evidence Audit
-          </Link>
-        </div>
-        <div className="flex items-center gap-4">
-          {micError && (
-            <div className="text-rose-500 text-xs font-semibold px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/20">
-              {micError}
-            </div>
-          )}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800">
-            <div className={`w-2 h-2 rounded-full ${isMonitoring ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse' : 'bg-slate-600'}`} />
-            <span className="text-sm font-medium text-slate-300">{isMonitoring ? 'LIVE' : 'INACTIVE'}</span>
-          </div>
-          {isMonitoring && (
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors duration-300 ${
-              data.vad_active
-                ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
-                : 'text-slate-500 bg-slate-900 border-slate-800'
-            }`}>
-              <Activity className="w-3 h-3" />
-              {data.vad_active ? 'VOICE' : 'SILENCE'}
-            </div>
-          )}
-          <button
-            onClick={isMonitoring ? stopMonitoring : startMonitoring}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
-              isMonitoring 
-                ? 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/20' 
-                : 'bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-            }`}
-          >
-            {isMonitoring ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            {isMonitoring ? 'Stop Monitoring' : 'Start Monitoring'}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {/* Live */}
+        <div className="panel p-6 flex flex-col">
+          <Mic className="w-6 h-6 text-brand" />
+          <h2 className="mt-3 font-semibold text-navy">Start Live Call</h2>
+          <p className="text-sm text-muted mt-1 flex-1">
+            Capture your microphone and analyse it in real time through the telephony pipeline.
+          </p>
+          <button onClick={vs.startLive}
+            className="mt-4 bg-brand hover:bg-brand-dark text-white font-medium rounded-md py-2.5 flex items-center justify-center gap-2">
+            <Mic className="w-4 h-4" /> Start Live Call
           </button>
         </div>
-      </header>
 
-      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto w-full">
-        {/* Left Column: Risk & Verdict */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
-          {/* Verdict Card */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900/80" />
-            <div className="relative z-10 flex flex-col items-center">
-              <h2 className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-4">Current Verdict</h2>
-              <div className={`px-6 py-3 rounded-lg border-2 flex items-center gap-3 ${getVerdictColor(data.verdict)}`}>
-                {data.verdict === 'REAL' && <ShieldCheck className="w-6 h-6" />}
-                {data.verdict === 'FRAUD' && <ShieldAlert className="w-6 h-6" />}
-                {data.verdict === 'SUSPICIOUS' && <Activity className="w-6 h-6" />}
-                <span className="text-2xl font-black tracking-widest">{data.verdict}</span>
-              </div>
-              {data.reasons && data.reasons.length > 0 && (
-                <div className="mt-4 w-full flex flex-col gap-1.5 items-center">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Detected Signals:</span>
-                  <div className="flex flex-wrap gap-1.5 justify-center">
-                    {data.reasons.map((r, i) => (
-                      <span key={i} className="text-xs font-mono bg-rose-950/80 text-rose-300 border border-rose-800/60 px-2 py-0.5 rounded">
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+        {/* Replay */}
+        <div className="panel p-6 flex flex-col">
+          <Play className="w-6 h-6 text-brand" />
+          <h2 className="mt-3 font-semibold text-navy">Replay Demo Call</h2>
+          <p className="text-sm text-muted mt-1">
+            Feed a recorded sample through the <em>same</em> real pipeline — no scripted result.
+          </p>
+          <select value={sample} onChange={(e) => setSample(e.target.value)}
+            className="mt-3 w-full border border-line rounded-md px-3 py-2 text-sm bg-surface text-ink">
+            {DEMO_SAMPLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          <button onClick={() => vs.startReplay(chosen.file, chosen.label)}
+            className="mt-3 border border-brand text-brand hover:bg-[#eaf1f9] font-medium rounded-md py-2.5 flex items-center justify-center gap-2">
+            <Play className="w-4 h-4" /> Replay Selected
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 panel p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FileText className="w-5 h-5 text-evidence" />
+          <div>
+            <p className="text-sm font-medium text-navy">Call History &amp; Evidence Chain</p>
+            <p className="text-xs text-muted">Review past calls and verify the tamper-proof evidence log.</p>
           </div>
+        </div>
+        <Link href="/evidence" className="text-sm text-brand hover:text-brand-dark flex items-center gap-1">
+          Open <ChevronRight className="w-4 h-4" />
+        </Link>
+      </div>
 
-          {/* Risk Meter */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 flex flex-col items-center">
-            <h2 className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-6">Threat Risk Meter</h2>
-            <div className="relative w-48 h-48 flex items-center justify-center">
-              <svg className="w-full h-full transform -rotate-90">
-                <circle cx="96" cy="96" r="88" className="stroke-slate-800 fill-none" strokeWidth="12" />
-                <circle 
-                  cx="96" cy="96" r="88" 
-                  className={`fill-none transition-all duration-1000 ${getRiskColor(data.risk_score)}`}
-                  strokeWidth="12" 
-                  strokeDasharray={`${(data.risk_score / 100) * 553} 553`}
-                  strokeLinecap="round"
-                  stroke="currentColor"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-5xl font-black ${getRiskColor(data.risk_score)}`}>{Math.round(data.risk_score)}</span>
-                <span className="text-slate-500 text-xs font-bold mt-1">/ 100</span>
-              </div>
+      <p className="text-center text-xs text-muted mt-6">
+        Demo audio goes in <code className="mono">frontend/public/demo/</code>. Backend must be running on port 8000.
+      </p>
+    </main>
+  );
+}
+
+/* ────────────────────────────── Dashboard ────────────────────────────── */
+function Dashboard({ vs }: any) {
+  const meta = riskMeta(vs.data.verdict);
+  const elapsed = useElapsed(vs.isMonitoring);
+
+  return (
+    <main className="max-w-6xl mx-auto px-6 py-6 space-y-4">
+      <StageBar isMonitoring={vs.isMonitoring} verdict={vs.data.verdict} hold={vs.hold} events={vs.logs.length} />
+
+      {/* Row 1: call status + risk */}
+      <div className="grid lg:grid-cols-3 gap-4">
+        <div className="panel p-5">
+          <p className="eyebrow">Call Status</p>
+          <div className="mt-3 flex items-center gap-2">
+            {vs.source === 'mic' ? <Mic className="w-4 h-4 text-brand" /> : <PhoneCall className="w-4 h-4 text-brand" />}
+            <span className="font-medium text-navy">
+              {vs.source === 'mic' ? 'Live Microphone' : vs.source === 'replay' ? (vs.replaySample ?? 'Replay') : 'Ended'}
+            </span>
+          </div>
+          <div className="mt-4 flex items-center gap-6">
+            <div>
+              <p className="text-xs text-muted">Duration</p>
+              <p className="mono text-lg text-navy">{elapsed}</p>
             </div>
-            
-            {/* Layer Breakdown */}
-            <div className="w-full mt-8 space-y-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Voice Authenticity (L1)</span>
-                <span className="font-mono text-slate-200">{Math.round(data.layers.voice_authenticity)}%</span>
-              </div>
-              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${data.layers.voice_authenticity}%` }} />
-              </div>
-              
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Intent Risk (L2)</span>
-                <span className="font-mono text-slate-200">{Math.round(data.layers.intent_risk)}%</span>
-              </div>
-              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-indigo-500 h-full transition-all duration-500" style={{ width: `${data.layers.intent_risk}%` }} />
-              </div>
-
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Call Signals (L3)</span>
-                <span className="font-mono text-slate-200">{Math.round(data.layers.call_signal_risk)}%</span>
-              </div>
-              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${data.layers.call_signal_risk}%` }} />
-              </div>
+            <div>
+              <p className="text-xs text-muted">Speech (VAD)</p>
+              <p className={`text-sm font-semibold ${vs.data.vadActive ? 'text-risk-low' : 'text-muted'}`}>
+                {vs.data.vadActive ? 'SPEECH DETECTED' : vs.isMonitoring ? 'LISTENING…' : 'IDLE'}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Right Column: GradCAM & Logs */}
-        <div className="lg:col-span-8 flex flex-col gap-6">
-          {/* Grad-CAM Heatmap */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 flex flex-col flex-1 min-h-[300px]">
-            <h2 className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-4">Acoustic Analysis (Grad-CAM)</h2>
-            <div className="flex-1 bg-slate-950 rounded-lg border border-slate-800/50 flex items-center justify-center overflow-hidden relative min-h-[300px]">
-              {data.gradcam_png_b64 ? (
-                <img 
-                  src={`data:image/png;base64,${data.gradcam_png_b64}`} 
-                  alt="Grad-CAM Heatmap" 
-                  className="w-full h-full object-cover opacity-80 mix-blend-screen"
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center text-slate-600 gap-3 h-full">
-                  <Activity className="w-8 h-8 opacity-50" />
-                  <span className="text-sm font-medium">Awaiting audio telemetry...</span>
+        <div className={`panel p-5 lg:col-span-2 border ${meta.soft}`}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="eyebrow">Current Risk</p>
+              <div className="mt-2 flex items-end gap-3">
+                <span className={`text-6xl font-bold leading-none ${meta.text}`}>{vs.data.riskScore}</span>
+                <span className="text-muted mb-1 text-sm">/ 100</span>
+              </div>
+              <p className={`mt-2 font-semibold ${meta.text}`}>{meta.label}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted">Synthetic-voice probability</p>
+              <p className={`text-3xl font-bold ${meta.text}`}>{vs.data.spoofProbability}%</p>
+              {vs.data.reasons?.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1 justify-end max-w-xs">
+                  {vs.data.reasons.slice(0, 3).map((r: string, i: number) => (
+                    <span key={i} className="mono text-[11px] bg-canvas border border-line text-muted px-1.5 py-0.5 rounded">{r}</span>
+                  ))}
                 </div>
               )}
-              {/* Scanline effect */}
-              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] mix-blend-overlay" />
-            </div>
-          </div>
-
-          {/* Evidence Logs */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-slate-800">
-              <h2 className="text-slate-400 text-sm font-semibold uppercase tracking-wider">Detection Event Log</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-900/80 text-slate-400">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Timestamp</th>
-                    <th className="px-4 py-3 font-medium">Risk Score</th>
-                    <th className="px-4 py-3 font-medium">Verdict</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {logs.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-slate-500">No events recorded yet</td>
-                    </tr>
-                  ) : (
-                    logs.map((log, i) => (
-                      <tr key={i} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="px-4 py-3 font-mono text-slate-300">{log.timestamp}</td>
-                        <td className="px-4 py-3">
-                          <span className={`font-mono font-bold ${getRiskColor(log.score)}`}>{Math.round(log.score)}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs font-bold px-2 py-1 rounded border ${getVerdictColor(log.verdict)}`}>
-                            {log.verdict}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
-      </main>
+      </div>
+
+      {/* Waveform */}
+      <div className="panel p-5">
+        <p className="eyebrow mb-3">Live Audio</p>
+        <Waveform bars={vs.waveform} active={vs.isMonitoring} />
+      </div>
+
+      {/* Row 2: signal + authenticity */}
+      <div className="grid lg:grid-cols-3 gap-4">
+        <div className="panel p-5">
+          <p className="eyebrow mb-3">Signal Pipeline</p>
+          <dl className="space-y-2.5 text-sm">
+            <Row k="VAD" v={vs.data.vadActive ? 'Active' : 'Idle'} vClass={vs.data.vadActive ? 'text-risk-low' : 'text-muted'} />
+            <Row k="Telephony" v="8 kHz · µ-law · noise" />
+            <Row k="Window" v="2.00 s" />
+            <Row k="Hop" v="500 ms" />
+          </dl>
+        </div>
+
+        <div className="panel p-5 lg:col-span-2">
+          <p className="eyebrow mb-3">Authenticity Breakdown</p>
+          <Bar label="Voice authenticity (Layer 1)" value={vs.data.layers.voice} color="bg-brand" />
+          <Bar label="Intent risk (Layer 2)" value={vs.data.layers.intent} color="bg-[#7a5bd0]" />
+          <Bar label="Call signals (Layer 3)" value={vs.data.layers.signal} color="bg-risk-med" />
+        </div>
+      </div>
+
+      {/* Risk over time */}
+      <div className="panel p-5">
+        <p className="eyebrow mb-3">Risk Over Time</p>
+        <RiskTimeline history={vs.riskHistory} verdict={vs.data.verdict} />
+      </div>
+
+      {/* PREVENT */}
+      {vs.hold && <PreventCard hold={vs.hold} risk={vs.data.riskScore} />}
+
+      {/* Event log */}
+      <div className="panel overflow-hidden">
+        <div className="px-5 py-3 border-b border-line"><p className="eyebrow">Detection Events</p></div>
+        <table className="w-full text-sm">
+          <thead className="text-muted">
+            <tr className="text-left">
+              <th className="px-5 py-2 font-medium">Time</th>
+              <th className="px-5 py-2 font-medium">Risk</th>
+              <th className="px-5 py-2 font-medium">Verdict</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {vs.logs.length === 0 ? (
+              <tr><td colSpan={3} className="px-5 py-6 text-center text-muted">No events yet — waiting for speech…</td></tr>
+            ) : vs.logs.map((l: any, i: number) => {
+              const m = riskMeta(l.verdict);
+              return (
+                <tr key={i}>
+                  <td className="px-5 py-2.5 mono text-ink">{l.t}</td>
+                  <td className={`px-5 py-2.5 mono font-semibold ${m.text}`}>{l.risk}</td>
+                  <td className="px-5 py-2.5"><span className={`text-xs font-semibold px-2 py-0.5 rounded border ${m.soft} ${m.text}`}>{l.verdict}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  );
+}
+
+/* ────────────────────────────── Small pieces ────────────────────────────── */
+function Row({ k, v, vClass = 'text-navy' }: { k: string; v: string; vClass?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-muted">{k}</dt>
+      <dd className={`mono ${vClass}`}>{v}</dd>
     </div>
   );
+}
+
+function Bar({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="mb-3 last:mb-0">
+      <div className="flex justify-between text-sm mb-1">
+        <span className="text-ink">{label}</span>
+        <span className="mono text-muted">{value}%</span>
+      </div>
+      <div className="h-2 bg-canvas border border-line rounded-full overflow-hidden">
+        <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function Waveform({ bars, active }: { bars: number[]; active: boolean }) {
+  return (
+    <div className="flex items-center gap-[3px] h-20">
+      {bars.map((b, i) => (
+        <div key={i} className={`flex-1 rounded-sm ${active ? 'bg-brand/70' : 'bg-line'}`}
+          style={{ height: `${Math.max(b * 100, 3)}%`, transition: 'height 120ms linear' }} />
+      ))}
+    </div>
+  );
+}
+
+function RiskTimeline({ history, verdict }: { history: number[]; verdict: Verdict }) {
+  const W = 900, H = 120, pad = 4;
+  if (history.length < 2) {
+    return <div className="h-[120px] flex items-center justify-center text-muted text-sm">Collecting data…</div>;
+  }
+  const stroke = verdict === 'FRAUD' ? '#c0392b' : verdict === 'SUSPICIOUS' ? '#b7791f' : '#2563a8';
+  const stepX = (W - pad * 2) / (history.length - 1);
+  const pts = history.map((v, i) => `${pad + i * stepX},${pad + (H - pad * 2) * (1 - v / 100)}`);
+  const area = `${pad},${H - pad} ${pts.join(' ')} ${pad + (history.length - 1) * stepX},${H - pad}`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[120px]" preserveAspectRatio="none">
+      {/* threshold lines: 60 suspicious, 70 fraud */}
+      {[60, 70].map((t) => (
+        <line key={t} x1={pad} x2={W - pad} y1={pad + (H - pad * 2) * (1 - t / 100)} y2={pad + (H - pad * 2) * (1 - t / 100)}
+          stroke={t === 70 ? '#f0c3bb' : '#f0dcae'} strokeWidth="1" strokeDasharray="4 4" />
+      ))}
+      <polygon points={area} fill={stroke} opacity="0.08" />
+      <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function StageBar({ isMonitoring, verdict, hold, events }: any) {
+  const detect = events > 0 || isMonitoring ? (isMonitoring ? 'active' : 'complete') : 'idle';
+  const prevent = hold ? 'triggered' : verdict === 'FRAUD' ? 'triggered' : 'waiting';
+  const prove = hold ? 'logged' : events > 0 ? 'logging' : 'waiting';
+  const stages = [
+    { icon: Radio, name: 'DETECT', state: detect, color: 'text-brand', dot: 'bg-brand' },
+    { icon: ShieldAlert, name: 'PREVENT', state: prevent, color: 'text-risk-med', dot: 'bg-risk-med' },
+    { icon: Lock, name: 'PROVE', state: prove, color: 'text-evidence', dot: 'bg-evidence' },
+  ];
+  return (
+    <div className="panel px-5 py-4 flex items-center justify-between">
+      {stages.map((s, i) => (
+        <div key={s.name} className="flex items-center flex-1 last:flex-none">
+          <div className="flex items-center gap-2.5">
+            <span className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              s.state === 'idle' || s.state === 'waiting' ? 'bg-canvas border border-line text-muted' : `${s.dot} text-white`
+            }`}>
+              <s.icon className="w-4 h-4" />
+            </span>
+            <div>
+              <p className={`text-sm font-semibold ${s.state === 'idle' || s.state === 'waiting' ? 'text-muted' : s.color}`}>{s.name}</p>
+              <p className="text-[11px] text-muted uppercase tracking-wide">{s.state}</p>
+            </div>
+          </div>
+          {i < stages.length - 1 && <div className="flex-1 h-px bg-line mx-4" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PreventCard({ hold, risk }: { hold: any; risk: number }) {
+  return (
+    <div className="panel border border-[#f0c3bb] bg-[#fbeae7] p-5">
+      <div className="flex items-start gap-4">
+        <ShieldAlert className="w-6 h-6 text-risk-high mt-0.5" />
+        <div className="flex-1">
+          <h3 className="font-semibold text-risk-high">Transaction Hold Triggered</h3>
+          <p className="text-sm text-ink mt-1">
+            High-confidence synthetic voice detected. The associated transaction has been temporarily blocked pending verification.
+          </p>
+          <div className="mt-3 grid sm:grid-cols-3 gap-3 text-sm">
+            <div><p className="text-xs text-muted">Risk</p><p className="mono font-semibold text-risk-high">{risk}%</p></div>
+            <div><p className="text-xs text-muted">Status</p><p className="font-semibold text-risk-high">HOLD ACTIVE</p></div>
+            <div><p className="text-xs text-muted">Reference</p><p className="mono text-navy">{hold.reference}</p></div>
+          </div>
+          <Link href="/evidence" className="inline-flex items-center gap-1 text-sm text-brand hover:text-brand-dark mt-3">
+            View Evidence <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useElapsed(active: boolean) {
+  const [s, setS] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    setS(0);
+    const t = setInterval(() => setS((p) => p + 1), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
 }

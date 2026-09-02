@@ -95,12 +95,15 @@ class EvidenceEntry(BaseModel):
     payload: dict
     entry_hash: str
     prev_hash: str
+    signature: str | None = None
     created_at: datetime
 
 
 class EvidenceResponse(BaseModel):
     call_id: uuid.UUID
-    chain_valid: bool
+    chain_valid: bool          # SHA-256 hash-chain integrity (tamper-evident)
+    signatures_valid: bool     # Ed25519 signatures verified (non-repudiation)
+    public_key: str            # server Ed25519 public key (hex) for independent verification
     entry_count: int
     entries: list[EvidenceEntry]
 

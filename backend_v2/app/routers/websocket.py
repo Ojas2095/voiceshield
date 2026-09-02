@@ -31,6 +31,7 @@ import app.inference as inf
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.hash_chain import GENESIS_HASH, build_payload, compute_hash
+from app.signing import sign_hash
 from app.inference import ConfidenceFusion
 from app.models import Call, Detection, EvidenceLog, TransactionHold
 from app.schemas import HoldTriggered, RiskUpdate, VADUpdate, to_verdict
@@ -317,6 +318,7 @@ async def _persist_detection(
             )
             prev_hash: str = prev_result.scalar_one_or_none() or GENESIS_HASH
             entry_hash = compute_hash(prev_hash, payload)
+            signature = sign_hash(entry_hash)  # Ed25519 — non-repudiation
 
             evidence = EvidenceLog(
                 call_id=call_id,
@@ -324,6 +326,7 @@ async def _persist_detection(
                 payload=payload,
                 entry_hash=entry_hash,
                 prev_hash=prev_hash,
+                signature=signature,
             )
             db.add(evidence)
 

@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # ── Model version tag (baked into every detection row) ──────────────────────
     model_version: str = "dummy-v0"
 
+    # ── Evidence signing (Ed25519) ──────────────────────────────────────────────
+    # Private key path; auto-generated on first use if absent. Use a KMS/HSM in prod.
+    evidence_key_path: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

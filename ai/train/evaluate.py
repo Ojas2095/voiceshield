@@ -175,7 +175,7 @@ def evaluate(data_dir: str = None, weights_dir: str = "./ai/models", device: str
     print("=" * 60)
 
     # Load model
-    wav2vec_name = None if cnn_only else "facebook/wav2vec2-large-xlsr-53"
+    wav2vec_name = None if cnn_only else "facebook/wav2vec2-base"  # match serving default
     detector = Layer1Detector(wav2vec_model_name=wav2vec_name, device=device)
 
     head_path = os.path.join(weights_dir, "best_wav2vec_head.pt")

@@ -182,7 +182,8 @@ voiceshield/
 - **Ojaswee (Team Lead)** — System Architecture, AI/ML Training & Integration
 - **Tanishq** — Backend Engineering, High-Throughput WebSockets & Evidence Chain
 - **Akshat & SK** — Cybersecurity Dashboard, Forensic Evidence UI & AudioWorklet
-- **Team Members 5 & 6** — Presentation, Dataset Benchmarking & Regulatory Compliance
+- **Arnav** — AI Intelligence Layers (Scam-Intent + Call-Signal Fusion), Ed25519-Signed Evidence Chain & Model/Evaluation Hardening
+- **Team Member 6** — Presentation, Dataset Benchmarking & Regulatory Compliance
 
 ---
 

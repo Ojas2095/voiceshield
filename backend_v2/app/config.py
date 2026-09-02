@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://voiceshield:voiceshield@localhost:5432/voiceshield"
 
     # ── Model ───────────────────────────────────────────────────────────────────
-    model_checkpoint: str = "facebook/wav2vec2-large-xlsr-53"
+    # wav2vec2-base (768-dim) — fast enough for real-time inference.
+    # For multilingual/accuracy at higher latency, switch to facebook/wav2vec2-large-xlsr-53.
+    # IMPORTANT: training (ai/train) must use the SAME checkpoint or head dims won't match.
+    model_checkpoint: str = "facebook/wav2vec2-base"
     model_weights_path: str | None = None          # None → use DummyClassifier
     use_dummy_classifier: bool = True              # flip to False once weights land
 

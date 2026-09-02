@@ -222,8 +222,8 @@ def train_wav2vec_head(
         return None
 
     # Load backbone (frozen)
-    print("Loading wav2vec2-large-xlsr-53 backbone (this may take a minute)...")
-    backbone = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-large-xlsr-53")
+    print("Loading wav2vec2-base backbone (this may take a minute)...")
+    backbone = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base")  # match serving default
     backbone.eval()
     for param in backbone.parameters():
         param.requires_grad = False

@@ -1,12 +1,14 @@
-const SAMPLE_RATE = 16000;
-const CHUNK_DURATION_MS = 500;
-const SAMPLES_PER_CHUNK = (SAMPLE_RATE * CHUNK_DURATION_MS) / 1000; // 8000
-
+/**
+ * VoiceShield AudioWorklet Processor
+ * Buffers microphone audio, performs hardware sample rate normalization to 16kHz,
+ * converts to 16-bit PCM, and posts 500ms chunks (8000 samples @ 16kHz).
+ */
 class MicProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.buffer = new Float32Array(SAMPLES_PER_CHUNK);
-    this.bufferIndex = 0;
+    this.targetSR = 16000;
+    this.targetSamples = 8000; // 500ms at 16kHz
+    this.accumulatedSamples = [];
   }
 
   process(inputs, outputs, parameters) {
@@ -14,21 +16,31 @@ class MicProcessor extends AudioWorkletProcessor {
     if (input && input.length > 0) {
       const channelData = input[0];
       for (let i = 0; i < channelData.length; i++) {
-        this.buffer[this.bufferIndex] = channelData[i];
-        this.bufferIndex++;
+        this.accumulatedSamples.push(channelData[i]);
+      }
 
-        if (this.bufferIndex >= SAMPLES_PER_CHUNK) {
-          // We have a full 500ms chunk. Convert to Int16 and post.
-          const int16Buffer = new Int16Array(SAMPLES_PER_CHUNK);
-          for (let j = 0; j < SAMPLES_PER_CHUNK; j++) {
-            // Clamp and convert to 16-bit PCM
-            let s = Math.max(-1, Math.min(1, this.buffer[j]));
-            int16Buffer[j] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
+      // AudioWorkletGlobalScope provides global `sampleRate` of the AudioContext
+      const currentSR = typeof sampleRate !== 'undefined' ? sampleRate : 16000;
+      const ratio = currentSR / this.targetSR;
+      const neededInputSamples = Math.floor(this.targetSamples * ratio);
+
+      while (this.accumulatedSamples.length >= neededInputSamples) {
+        const int16Buffer = new Int16Array(this.targetSamples);
+        
+        for (let j = 0; j < this.targetSamples; j++) {
+          const srcIdx = j * ratio;
+          const idx = Math.floor(srcIdx);
+          const frac = srcIdx - idx;
+          const s0 = this.accumulatedSamples[idx] || 0;
+          const s1 = (idx + 1 < this.accumulatedSamples.length) ? this.accumulatedSamples[idx + 1] : s0;
+          const interp = s0 + frac * (s1 - s0);
           
-          this.port.postMessage(int16Buffer.buffer, [int16Buffer.buffer]);
-          this.bufferIndex = 0;
+          const clamped = Math.max(-1.0, Math.min(1.0, interp));
+          int16Buffer[j] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
         }
+
+        this.accumulatedSamples.splice(0, neededInputSamples);
+        this.port.postMessage(int16Buffer.buffer, [int16Buffer.buffer]);
       }
     }
     return true; // Keep processor alive

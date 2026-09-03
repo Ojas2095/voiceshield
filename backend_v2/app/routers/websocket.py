@@ -217,10 +217,17 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 lf_e = float(np.mean(fft_mag[lf_mask] ** 2)) + 1e-9
                 hf_ratio = round(hf_e / lf_e, 4)
                 rms_val = round(float(np.sqrt(np.mean(window_np ** 2))), 4)
+                if rms_val < 0.012:
+                    reported_hf = 0.0150
+                    jitter = 0.0
+                else:
+                    reported_hf = hf_ratio
+                    jitter = round(min(1.0, max(0.0, (hf_ratio - 0.18) / 0.32)), 4)
+
                 acoustic_features = {
-                    "hf_ratio": hf_ratio,
+                    "hf_ratio": reported_hf,
                     "rms": rms_val,
-                    "vocoder_phase_jitter": round(min(1.0, max(0.0, (hf_ratio - 0.15) / 0.25)), 4),
+                    "vocoder_phase_jitter": jitter,
                 }
 
                 hold_data = None

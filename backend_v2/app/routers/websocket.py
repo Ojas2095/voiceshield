@@ -21,6 +21,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -83,6 +84,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
     last_signal_risk: float = 0.0
     last_language: str = "unknown"
     last_matched_reasons: list[str] = []
+    accumulated_transcript: str = ""
 
     try:
         # Validate the call exists
@@ -155,7 +157,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                         "current_risk": spoof_prob,
                     }
 
-                    intent_result, signal_result, language = await loop.run_in_executor(
+                    intent_result, signal_result, language, transcript = await loop.run_in_executor(
                         inf._executor,
                         _run_intelligence_sync,
                         asr_audio,
@@ -165,6 +167,8 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     last_intent_risk = float(intent_result.get("intent_risk", 0.0))
                     last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
                     last_language = language or "unknown"
+                    if transcript and transcript.strip():
+                        accumulated_transcript = (accumulated_transcript + " " + transcript.strip()).strip()
 
                     # Merge matched reasons from both layers
                     intent_matches = intent_result.get("matched", [])
@@ -185,6 +189,39 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 is_flagged = spoof_prob >= settings.flag_threshold
                 model_ver = getattr(classifier, "model_version", settings.model_version)
                 verdict = to_verdict(fused_score)
+
+                # ── 3-Way Threat Classification ──────────────────────────────
+                voice_classification: Literal["HUMAN", "SYNTHETIC"] = "SYNTHETIC" if spoof_prob >= 0.40 else "HUMAN"
+                if last_intent_risk >= 0.50:
+                    scam_risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "HIGH"
+                elif last_intent_risk >= 0.25:
+                    scam_risk_level = "MEDIUM"
+                else:
+                    scam_risk_level = "LOW"
+
+                if voice_classification == "SYNTHETIC":
+                    threat_category: Literal["LEGITIMATE_HUMAN", "HUMAN_VISHING", "AI_SYNTHETIC"] = "AI_SYNTHETIC"
+                elif scam_risk_level in ("HIGH", "MEDIUM"):
+                    threat_category = "HUMAN_VISHING"
+                else:
+                    threat_category = "LEGITIMATE_HUMAN"
+
+                # ── Acoustic Telemetry ───────────────────────────────────────
+                window_np = window.astype(np.float32)
+                n_samples = min(len(window_np), 32000)
+                fft_mag = np.abs(np.fft.rfft(window_np[:n_samples]))
+                freqs = np.fft.rfftfreq(n_samples, 1.0 / 16000.0)
+                hf_mask = (freqs >= 2800) & (freqs <= 3900)
+                lf_mask = (freqs >= 250) & (freqs <= 2200)
+                hf_e = float(np.mean(fft_mag[hf_mask] ** 2)) if np.any(hf_mask) else 0.0
+                lf_e = float(np.mean(fft_mag[lf_mask] ** 2)) + 1e-9
+                hf_ratio = round(hf_e / lf_e, 4)
+                rms_val = round(float(np.sqrt(np.mean(window_np ** 2))), 4)
+                acoustic_features = {
+                    "hf_ratio": hf_ratio,
+                    "rms": rms_val,
+                    "vocoder_phase_jitter": round(min(1.0, max(0.0, (hf_ratio - 0.15) / 0.25)), 4),
+                }
 
                 hold_data = None
                 try:
@@ -215,7 +252,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     )
                     await _send_json(websocket, hold_msg.model_dump())
 
-                # Push risk update — all three layers now included
+                # Push risk update — all three layers and 3-way taxonomy now included
                 risk_msg = RiskUpdate(
                     window_start_ms=start_ms,
                     window_end_ms=end_ms,
@@ -229,6 +266,11 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     intent_risk=round(last_intent_risk, 4),
                     call_signal_risk=round(last_signal_risk, 4),
                     matched_reasons=last_matched_reasons,
+                    transcript=accumulated_transcript,
+                    voice_classification=voice_classification,
+                    scam_risk_level=scam_risk_level,
+                    threat_category=threat_category,
+                    acoustic_features=acoustic_features,
                 )
                 await _send_json(websocket, risk_msg.model_dump())
 
@@ -250,12 +292,12 @@ def _run_intelligence_sync(
     audio: np.ndarray,
     transcriber,
     call_metadata: dict | None = None,
-) -> tuple[dict, dict, str | None]:
+) -> tuple[dict, dict, str | None, str]:
     """
     Synchronous wrapper for ASR → intent + call signals.
     Called from run_in_executor so it never blocks the event loop.
 
-    Returns: (intent_result_dict, signal_result_dict, language_str)
+    Returns: (intent_result_dict, signal_result_dict, language_str, transcript_str)
     """
     asr_out = transcriber.transcribe_array(audio, sample_rate=16000)
     transcript = asr_out.get("text", "") or ""
@@ -268,7 +310,7 @@ def _run_intelligence_sync(
     # Layer 3: pass available call metadata (duration, window count, current risk)
     signal_result = score_call_signals(call_metadata or {})
 
-    return intent_result, signal_result, language
+    return intent_result, signal_result, language, transcript
 
 
 # ── DB persistence ─────────────────────────────────────────────────────────────

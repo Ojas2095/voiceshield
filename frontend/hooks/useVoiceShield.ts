@@ -17,6 +17,16 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 export type Verdict = 'REAL' | 'SUSPICIOUS' | 'FRAUD' | 'WAITING';
 export type Source = 'mic' | 'replay' | null;
 
+export type ThreatCategory = 'LEGITIMATE_HUMAN' | 'HUMAN_VISHING' | 'AI_SYNTHETIC' | 'WAITING';
+export type VoiceClassification = 'HUMAN' | 'SYNTHETIC' | 'WAITING';
+export type ScamRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'WAITING';
+
+export interface AcousticFeatures {
+  hf_ratio: number;
+  rms: number;
+  vocoder_phase_jitter: number;
+}
+
 export interface ShieldData {
   verdict: Verdict;
   riskScore: number;          // fused risk 0..100
@@ -25,6 +35,11 @@ export interface ShieldData {
   reasons: string[];
   vadActive: boolean;
   gradcam: string | null;     // base64 PNG
+  transcript: string;
+  voiceClassification: VoiceClassification;
+  scamRiskLevel: ScamRiskLevel;
+  threatCategory: ThreatCategory;
+  acousticFeatures: AcousticFeatures;
 }
 
 export interface EventLog {
@@ -47,6 +62,11 @@ const EMPTY: ShieldData = {
   reasons: [],
   vadActive: false,
   gradcam: null,
+  transcript: '',
+  voiceClassification: 'WAITING',
+  scamRiskLevel: 'WAITING',
+  threatCategory: 'WAITING',
+  acousticFeatures: { hf_ratio: 0, rms: 0, vocoder_phase_jitter: 0 },
 };
 
 const WAVE_LEN = 72;      // waveform bars retained
@@ -148,6 +168,11 @@ export function useVoiceShield() {
             reasons: msg.matched_reasons?.length ? msg.matched_reasons : prev.reasons,
             vadActive: msg.vad_active ?? prev.vadActive,
             gradcam: msg.gradcam_png_b64 ?? prev.gradcam,
+            transcript: msg.transcript ?? prev.transcript,
+            voiceClassification: msg.voice_classification ?? prev.voiceClassification,
+            scamRiskLevel: msg.scam_risk_level ?? prev.scamRiskLevel,
+            threatCategory: msg.threat_category ?? prev.threatCategory,
+            acousticFeatures: msg.acoustic_features ?? prev.acousticFeatures,
           }));
           setRiskHistory((prev) => [...prev, risk].slice(-HISTORY_LEN));
           if (msg.verdict && msg.verdict !== 'WAITING') {

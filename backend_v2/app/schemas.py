@@ -60,6 +60,12 @@ class RiskUpdate(BaseModel):
     intent_risk: float = 0.0
     call_signal_risk: float = 0.0
     matched_reasons: list[str] = []    # human-readable evidence for the UI
+    # ── Explainability & 3-way classification fields ─────────────────────────
+    transcript: str = ""
+    voice_classification: Literal["HUMAN", "SYNTHETIC"] = "HUMAN"
+    scam_risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "LOW"
+    threat_category: Literal["LEGITIMATE_HUMAN", "HUMAN_VISHING", "AI_SYNTHETIC"] = "LEGITIMATE_HUMAN"
+    acoustic_features: dict[str, float] = {}
 
 
 class HoldTriggered(BaseModel):

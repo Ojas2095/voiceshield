@@ -13,10 +13,12 @@ interface Vector {
   id: string; file: string; type: 'REAL' | 'CLONED'; lang: string; desc: string; codec: string;
 }
 const VECTORS: Vector[] = [
-  { id: 'VS-A-8041', file: '/demo/real_en.wav', type: 'REAL', lang: 'English', desc: 'Inbound customer authentication — wire verification', codec: '8 kHz G.711u / PSTN' },
-  { id: 'VS-B-9912', file: '/demo/cloned_en.wav', type: 'CLONED', lang: 'English', desc: 'Executive impersonation — wire fraud (XTTS clone)', codec: '8 kHz PCM / RTP' },
-  { id: 'VS-C-3387', file: '/demo/real_hi.wav', type: 'REAL', lang: 'Hindi', desc: 'Customer support inquiry — regional gateway', codec: '8 kHz G.711a' },
-  { id: 'VS-D-4490', file: '/demo/cloned_hi.wav', type: 'CLONED', lang: 'Hindi', desc: 'Synthetic voice — banking OTP extraction', codec: '8 kHz Opus' },
+  { id: 'VS-A-8041', file: '/demo/real_en.wav', type: 'REAL', lang: 'English (2s)', desc: 'Inbound customer authentication — wire verification', codec: '8 kHz G.711u / PSTN' },
+  { id: 'VS-B-9912', file: '/demo/cloned_en.wav', type: 'CLONED', lang: 'English (2s)', desc: 'Executive impersonation — wire fraud (XTTS clone)', codec: '8 kHz PCM / RTP' },
+  { id: 'VS-LONG-01', file: '/demo/real_long_en.wav', type: 'REAL', lang: 'English (68s)', desc: 'Extended genuine colleague conversation — natural dialogue & pauses', codec: '16 kHz PCM / Telephony' },
+  { id: 'VS-LONG-02', file: '/demo/cloned_long_scam.wav', type: 'CLONED', lang: 'English (95s)', desc: 'Extended Digital Arrest extortion attack — escalating threats & UPI demand', codec: '16 kHz Neural Vocoder' },
+  { id: 'VS-C-3387', file: '/demo/real_hi.wav', type: 'REAL', lang: 'Hindi (2s)', desc: 'Customer support inquiry — regional gateway', codec: '8 kHz G.711a' },
+  { id: 'VS-D-4490', file: '/demo/cloned_hi.wav', type: 'CLONED', lang: 'Hindi (2s)', desc: 'Synthetic voice — banking OTP extraction', codec: '8 kHz Opus' },
 ];
 
 function riskMeta(v: Verdict) {

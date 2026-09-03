@@ -12,21 +12,27 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
+    Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+UUID_TYPE = PG_UUID(as_uuid=True).with_variant(Uuid(as_uuid=True), "sqlite")
+ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 
 
 class Call(Base):
     __tablename__ = "calls"
 
     call_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID_TYPE, primary_key=True, default=uuid.uuid4
     )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -60,9 +66,9 @@ class Call(Base):
 class Detection(Base):
     __tablename__ = "detections"
 
-    detection_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    detection_id: Mapped[int] = mapped_column(ID_TYPE, primary_key=True, autoincrement=True)
     call_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False
+        UUID_TYPE, ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False
     )
     window_start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     window_end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -94,12 +100,12 @@ class Detection(Base):
 class TransactionHold(Base):
     __tablename__ = "transaction_holds"
 
-    hold_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    hold_id: Mapped[int] = mapped_column(ID_TYPE, primary_key=True, autoincrement=True)
     call_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False
+        UUID_TYPE, ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False
     )
     triggered_by: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("detections.detection_id"), nullable=True
+        ID_TYPE, ForeignKey("detections.detection_id"), nullable=True
     )
     triggered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -115,14 +121,14 @@ class TransactionHold(Base):
 class EvidenceLog(Base):
     __tablename__ = "evidence_log"
 
-    entry_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    entry_id: Mapped[int] = mapped_column(ID_TYPE, primary_key=True, autoincrement=True)
     call_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False
+        UUID_TYPE, ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False
     )
     detection_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("detections.detection_id"), nullable=True
+        ID_TYPE, ForeignKey("detections.detection_id"), nullable=True
     )
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False)
     entry_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     # Ed25519 signature over entry_hash (non-repudiation); nullable for legacy rows.

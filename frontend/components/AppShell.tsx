@@ -3,16 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Radar, FlaskConical, History, ShieldCheck, Terminal, ShieldHalf } from 'lucide-react';
+import { Radar, FlaskConical, History, ShieldCheck, Terminal, ShieldHalf, Smartphone } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 const NAV = [
   { href: '/', label: 'Live Protection', icon: Radar, badge: 'LIVE' },
+  { href: '/mobile', label: 'Mobile In-Call HUD', icon: Smartphone, badge: 'HUD' },
   { href: '/replay', label: 'Replay Lab', icon: FlaskConical },
   { href: '/history', label: 'Call History', icon: History },
-  { href: '/evidence', label: 'Evidence', icon: ShieldCheck },
+  { href: '/evidence', label: 'Evidence Station', icon: ShieldCheck },
 ];
 
 /** Polls /health so every page shows real backend connectivity (no fake uptime). */

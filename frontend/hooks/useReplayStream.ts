@@ -49,7 +49,7 @@ export function useReplayStream(
         const decoded = await decodeCtx.decodeAudioData(arrayBuf.slice(0));
         decodeCtx.close();
 
-        const frames = Math.ceil(decoded.duration * TARGET_SR);
+        const frames = Math.max(1, Math.ceil(decoded.duration * TARGET_SR));
         const offline = new OfflineAudioContext(1, frames, TARGET_SR);
         const srcNode = offline.createBufferSource();
         srcNode.buffer = decoded;
@@ -58,7 +58,7 @@ export function useReplayStream(
         const rendered = await offline.startRendering();
         const samples = rendered.getChannelData(0); // Float32 @ 16 kHz mono
 
-        const totalChunks = Math.ceil(samples.length / SAMPLES_PER_CHUNK);
+        const totalChunks = Math.max(1, Math.ceil(samples.length / SAMPLES_PER_CHUNK));
         let chunkIndex = 0;
         setIsPlaying(true);
 
@@ -86,8 +86,10 @@ export function useReplayStream(
         }, CHUNK_MS);
       } catch (err) {
         console.error('[Replay] failed', err);
-        setError(err instanceof Error ? err.message : 'Failed to replay audio');
+        const msg = err instanceof Error ? err.message : 'Failed to replay audio';
+        setError(msg);
         stop();
+        throw new Error(msg);
       }
     },
     [onAudioChunk, onComplete, stop],

@@ -20,8 +20,11 @@ const statusPill: Record<string, string> = {
 const railColor: Record<string, string> = { active: 'bg-brand', ended: 'bg-line', held: 'bg-risk-high' };
 
 const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { hour12: false });
-const dur = (c: CallRecord) =>
-  c.ended_at ? `${Math.round((+new Date(c.ended_at) - +new Date(c.started_at)) / 1000)}s` : '—';
+const dur = (c: CallRecord) => {
+  if (!c.ended_at || !c.started_at) return '—';
+  const diff = Math.round((+new Date(c.ended_at) - +new Date(c.started_at)) / 1000);
+  return isNaN(diff) || diff < 0 ? '—' : `${diff}s`;
+};
 
 type Filter = 'ALL' | 'HELD' | 'ACTIVE' | 'ENDED';
 
@@ -163,7 +166,7 @@ export default function CallHistory() {
                     <span className="text-body-sm text-risk-high">Transaction hold enforced on this call.</span>
                   </div>
                 )}
-                <Link href="/evidence" className="inline-flex items-center gap-1 text-body-sm text-brand hover:text-brand-dark">
+                <Link href={`/evidence?call_id=${sel.call_id}`} className="inline-flex items-center gap-1 text-body-sm text-brand hover:text-brand-dark">
                   <Clock className="w-3.5 h-3.5" /> Open Evidence Chain <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>

@@ -78,8 +78,9 @@ class SileroVAD:
         try:
             import torch
 
-            tensor = torch.tensor(window).unsqueeze(0)
-            confidence: float = self._model(tensor, sr).item()
+            with torch.no_grad():
+                tensor = torch.tensor(window).unsqueeze(0)
+                confidence: float = self._model(tensor, sr).item()
             return confidence >= threshold
         except Exception:
             return self._energy_fallback(window)
@@ -87,6 +88,8 @@ class SileroVAD:
     @staticmethod
     def _energy_fallback(window: np.ndarray, threshold: float = 0.01) -> bool:
         """RMS energy heuristic — crude but robust."""
+        if window.size == 0:
+            return False
         rms = float(np.sqrt(np.mean(window ** 2)))
         return rms > threshold
 
@@ -131,6 +134,13 @@ class VADPipeline:
         Accepts a raw binary frame (int16 PCM at client sample rate, 20ms).
         Returns a list of (window_16k, vad_active, start_ms, end_ms) tuples.
         """
+        # Guard against odd byte length from network fragmentation
+        rem = len(raw_bytes) % 2
+        if rem != 0:
+            raw_bytes = raw_bytes[:-rem]
+        if not raw_bytes:
+            return []
+
         # Convert raw bytes → float32 (assumes int16 little-endian from AudioWorklet)
         int16_arr = np.frombuffer(raw_bytes, dtype="<i2").astype(np.float32) / 32768.0
         self._buf.push(int16_arr)

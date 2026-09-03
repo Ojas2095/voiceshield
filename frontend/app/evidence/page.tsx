@@ -24,7 +24,8 @@ export default function EvidenceStation() {
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [q, setQ] = useState('');
   const [callsErr, setCallsErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const paramCallId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('call_id') : null;
+  const [selected, setSelected] = useState<string | null>(paramCallId);
 
   const loadCalls = useCallback(async () => {
     setCallsErr(null);
@@ -35,9 +36,9 @@ export default function EvidenceStation() {
       if (!res.ok) throw new Error(`Backend error (HTTP ${res.status}).`);
       const data: CallRecord[] = await res.json();
       setCalls(data);
-      if (!selected && data.length) setSelected(data[0].call_id);
+      setSelected((prev) => prev ?? (data.length ? data[0].call_id : null));
     } catch (e) { setCallsErr(e instanceof Error ? e.message : 'Failed to load records.'); }
-  }, [selected]);
+  }, []);
   useEffect(() => { loadCalls(); }, [loadCalls]);
 
   const events = useMemo(
@@ -124,11 +125,13 @@ function CaseDetail({ callId }: { callId: string }) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `voiceshield-evidence-${callId.slice(0, 8)}.json`; a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const peakRisk = data && data.entries.length ? Math.max(...data.entries.map((e) => e.payload.fused_risk_score)) : 0;
-  const flagged = !!data?.entries.some((e) => e.payload.is_flagged);
+  const peakRisk = data?.entries?.length
+    ? data.entries.reduce((max, e) => Math.max(max, e.payload?.fused_risk_score ?? 0), 0)
+    : 0;
+  const flagged = !!data?.entries.some((e) => e.payload?.is_flagged);
   const verified = data ? data.chain_valid && data.signatures_valid : false;
 
   return (

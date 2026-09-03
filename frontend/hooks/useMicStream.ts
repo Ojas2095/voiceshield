@@ -24,6 +24,10 @@ export function useMicStream(onAudioChunk: (chunk: ArrayBuffer) => void) {
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
 
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
       await audioContext.audioWorklet.addModule('/worklet.js');
 
       const sourceNode = audioContext.createMediaStreamSource(stream);
@@ -43,28 +47,37 @@ export function useMicStream(onAudioChunk: (chunk: ArrayBuffer) => void) {
       setError(null);
     } catch (err) {
       console.error('Failed to start microphone', err);
-      setError('Microphone access denied or unavailable.');
+      const msg = 'Microphone access denied or unavailable.';
+      setError(msg);
+      throw new Error(msg);
     }
   }, [onAudioChunk]);
 
   const stopMic = useCallback(() => {
-    if (workletNodeRef.current) {
-      workletNodeRef.current.disconnect();
-      workletNodeRef.current = null;
+    try {
+      if (workletNodeRef.current) {
+        workletNodeRef.current.disconnect();
+        workletNodeRef.current = null;
+      }
+      if (sourceNodeRef.current) {
+        sourceNodeRef.current.disconnect();
+        sourceNodeRef.current = null;
+      }
+      if (audioContextRef.current) {
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(() => {});
+        }
+        audioContextRef.current = null;
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      setIsRecording(false);
     }
-    if (sourceNodeRef.current) {
-      sourceNodeRef.current.disconnect();
-      sourceNodeRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsRecording(false);
   }, []);
 
   return { isRecording, error, startMic, stopMic };

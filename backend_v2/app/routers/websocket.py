@@ -100,7 +100,14 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
 
         while True:
             try:
-                raw_frame = await asyncio.wait_for(websocket.receive_bytes(), timeout=30.0)
+                msg_data = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+                if msg_data.get("type") == "websocket.disconnect":
+                    break
+                if "bytes" in msg_data and msg_data["bytes"]:
+                    raw_frame = msg_data["bytes"]
+                else:
+                    # Ignore text pings or keep-alive frames
+                    continue
             except asyncio.TimeoutError:
                 await websocket.send_json({"type": "ping"})
                 continue
@@ -135,7 +142,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     speech_buffer.pop(0)
 
                 # ── Layer 2 + 3: Every ASR_INTERVAL speech windows ───────────
-                if _INTELLIGENCE_AVAILABLE and speech_window_count % _ASR_INTERVAL == 0:
+                if _INTELLIGENCE_AVAILABLE and speech_window_count % _ASR_INTERVAL == 0 and speech_buffer:
                     asr_audio = np.concatenate(speech_buffer)
                     # Clear buffer after ASR to prevent overlapping transcript evaluations
                     speech_buffer.clear()
@@ -145,7 +152,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                         "call_id": str(call_id),
                         "duration_s": end_ms / 1000.0,
                         "speech_windows": speech_window_count,
-                        "current_risk": fusion.update(spoof_prob) if speech_window_count > 1 else spoof_prob,
+                        "current_risk": spoof_prob,
                     }
 
                     intent_result, signal_result, language = await loop.run_in_executor(
@@ -179,20 +186,24 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 model_ver = getattr(classifier, "model_version", settings.model_version)
                 verdict = to_verdict(fused_score)
 
-                detection_id, hold_data = await _persist_detection(
-                    call_id=call_id,
-                    start_ms=start_ms,
-                    end_ms=end_ms,
-                    spoof_prob=spoof_prob,
-                    fused_score=fused_score,
-                    is_flagged=is_flagged,
-                    verdict=verdict,
-                    model_ver=model_ver,
-                    auto_hold=(
-                        fused_score >= settings.hold_threshold
-                        and not hold_already_triggered
-                    ),
-                )
+                hold_data = None
+                try:
+                    detection_id, hold_data = await _persist_detection(
+                        call_id=call_id,
+                        start_ms=start_ms,
+                        end_ms=end_ms,
+                        spoof_prob=spoof_prob,
+                        fused_score=fused_score,
+                        is_flagged=is_flagged,
+                        verdict=verdict,
+                        model_ver=model_ver,
+                        auto_hold=(
+                            fused_score >= settings.hold_threshold
+                            and not hold_already_triggered
+                        ),
+                    )
+                except Exception as db_err:
+                    logger.warning("Failed to persist detection for call_id=%s: %s", call_id, db_err)
 
                 if hold_data:
                     hold_already_triggered = True

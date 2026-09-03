@@ -115,7 +115,7 @@ export function useVoiceShield() {
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
   const connectWS = useCallback((callId: string) => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const proto = API_BASE.startsWith('https') ? 'wss:' : 'ws:';
     const host = API_BASE.replace(/^https?:\/\//, '');
     const ws = new WebSocket(`${proto}//${host}/ws/stream/${callId}`);
     ws.binaryType = 'arraybuffer';
@@ -163,7 +163,7 @@ export function useVoiceShield() {
         case 'hold_triggered':
           setHold({
             reference: msg.mock_reference ?? 'VS-HOLD',
-            risk: 0,
+            risk: data.riskScore || 85,
             at: new Date(msg.triggered_at ?? Date.now()).toLocaleTimeString(),
           });
           break;
@@ -210,6 +210,12 @@ export function useVoiceShield() {
   // ── Public actions ─────────────────────────────────────────────────────────
   const beginSession = useCallback(
     async (src: 'mic' | 'replay') => {
+      mic.stopMic();
+      replay.stop();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
       setData(EMPTY);
       setLogs([]);
       setRiskHistory([]);
@@ -222,7 +228,7 @@ export function useVoiceShield() {
       connectWS(callId);
       return callId;
     },
-    [startCall, connectWS],
+    [mic, replay, startCall, connectWS],
   );
 
   const startLive = useCallback(async () => {

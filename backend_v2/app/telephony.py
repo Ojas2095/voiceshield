@@ -54,8 +54,8 @@ def _ulaw_encode_decode(audio: np.ndarray) -> np.ndarray:
     MU = 255.0
     clipped = np.clip(audio, -1.0, 1.0)
     encoded = np.sign(clipped) * np.log1p(MU * np.abs(clipped)) / np.log1p(MU)
-    # Quantise to 8 bits
-    quantised = np.round(encoded * 128).astype(np.int8).astype(np.float32) / 128.0
+    # Quantise to 8 bits (clip to prevent integer overflow wraparound +128 -> -128)
+    quantised = np.clip(np.round(encoded * 128), -128, 127).astype(np.int8).astype(np.float32) / 128.0
     # Decode
     decoded = np.sign(quantised) * (np.expm1(np.abs(quantised) * np.log1p(MU))) / MU
     return decoded.astype(np.float32)

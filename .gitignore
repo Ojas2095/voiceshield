@@ -20,6 +20,8 @@ env/
 data/
 !data/.gitkeep
 *.wav
+# ...but DO commit the demo-call audio so the demo is self-contained.
+!frontend/public/demo/*.wav
 
 # Model binary weights (keep threshold.json committed)
 *.pt

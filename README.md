@@ -106,22 +106,30 @@ VoiceShield doesn't just produce a score — it explains **where** the synthetic
 
 ### 1. Start the FastAPI Backend
 ```bash
+pip install -r backend_v2/requirements.txt
+
 # Set PYTHONPATH to include backend_v2
 $env:PYTHONPATH="backend_v2"   # Windows PowerShell
 # export PYTHONPATH="backend_v2" # Linux / macOS
 
-# Launch server
+# Launch server (SQLite DB auto-creates on first run — no Postgres needed for the demo)
 python -m uvicorn app.main:app --port 8000 --reload
 ```
-API Documentation will be live at: [`http://localhost:8000/docs`](http://localhost:8000/docs)
+API docs at [`http://localhost:8000/docs`](http://localhost:8000/docs). On startup you'll see the
+loaded classifier. **Model modes** (chosen automatically by which weights exist in `ai/models/`):
+`best_wav2vec_head.pt` + `best_mel_cnn.pt` → dual-branch · only `best_mel_cnn.pt` → MelCNN ·
+neither → `DummyClassifier` (lets the UI run before weights land). To train weights, see
+`ai/train/RUNBOOK.md`.
 
-### 2. Start the Next.js Frontend Dashboard
+### 2. Start the Next.js Frontend Console
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open [`http://localhost:3000`](http://localhost:3000) to view the real-time monitoring console.
+Open [`http://localhost:3000`](http://localhost:3000). Add demo audio to
+`frontend/public/demo/` (see that folder's README + `scripts/prepare_demo_audio.py`) to enable
+**Replay Demo Call**.
 
 ---
 
@@ -141,6 +149,30 @@ python -m intelligence.test_layers
 # 3. Backend Hash Chain & Telephony Tests
 $env:PYTHONPATH="backend_v2"; python -m pytest backend_v2/tests/
 ```
+
+---
+
+## 🎬 Demo Procedure (DETECT → PREVENT → PROVE)
+
+With the backend (`:8000`) and frontend (`:3000`) running:
+
+**Demo B — Cloned voice (the main story):**
+1. On the Console, choose **Replay Demo Call → "Cloned Voice — English"** and click **Replay Selected**.
+   *(The file streams through the real WebSocket pipeline — telephony → VAD → 2 s windows → model.
+   There is no scripted result.)*
+2. Watch **Risk Over Time** climb as synthetic speech is detected → **HIGH RISK**.
+3. **PREVENT:** the risk crosses threshold → **Transaction Hold Triggered** card appears (reference,
+   risk, status).
+4. **PROVE:** open **Evidence & History → View Chain** → click through the entries →
+   the **Verify Integrity** banner shows **CHAIN VALID — N/N records verified** (hash-chain intact,
+   Ed25519 signatures valid).
+
+**Demo A — Real voice:** replay **"Real Voice — English"** → risk stays **LOW**, no hold. Evidence
+is still logged and verifiable.
+
+Then repeat with **Start Live Call** using the microphone.
+
+> The demo runs entirely on `localhost` — no external APIs, cloud inference, or internet required.
 
 ---
 

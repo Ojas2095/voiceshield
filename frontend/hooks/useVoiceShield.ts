@@ -1,242 +1,284 @@
 /**
- * useVoiceShield — the single integration layer between the frontend
- * dashboard and the backend_v2 API.
+ * useVoiceShield — the single integration layer between the console UI and
+ * backend_v2. Supports two real audio sources that both flow through the
+ * identical pipeline (WS → telephony → VAD → windows → model → fusion):
  *
- * Lifecycle:
- *   startMonitoring()
- *     → POST /api/calls/start              (gets real UUID from DB)
- *     → open WS /ws/stream/{uuid}          (binary PCM frames)
- *     → startMic()                         (AudioWorklet → ws.send)
+ *   startLive()            → mic (AudioWorklet)     source="mic"
+ *   startReplay(url,label) → recorded demo file     source="replay"
  *
- *   stopMonitoring()
- *     → stopMic()
- *     → ws.close()
- *     → POST /api/calls/{uuid}/stop        (marks call ended in DB)
- *
- * Backend WS message types received:
- *   { type: "risk_update",  fused_risk_score, spoof_probability, verdict, is_flagged, vad_active, ... }
- *   { type: "vad_update",   vad_active, timestamp_ms }
- *   { type: "hold_triggered", hold_id, mock_reference, verdict }
- *   { type: "ping" }
- *   { type: "error", detail }
+ * No source produces a scripted result — the backend decides the verdict.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMicStream } from './useMicStream';
+import { useReplayStream } from './useReplayStream';
 
-// ── Backend base URL (env-overridable for production) ────────────────────────
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-// ── Frontend display state ────────────────────────────────────────────────────
+export type Verdict = 'REAL' | 'SUSPICIOUS' | 'FRAUD' | 'WAITING';
+export type Source = 'mic' | 'replay' | null;
 
-export interface ShieldResponse {
-  verdict: 'REAL' | 'SUSPICIOUS' | 'FRAUD' | 'WAITING';
-  /** Fused risk score mapped to 0-100 for the UI ring meter */
-  risk_score: number;
-  layers: {
-    /** spoof_probability * 100 from the voice classifier */
-    voice_authenticity: number;
-    /** Placeholder — Layer 2 (ASR intent) wired in later */
-    intent_risk: number;
-    call_signal_risk: number;
-  };
-  reasons?: string[];
-  /** Grad-CAM base64 PNG — populated by AI layer when available */
-  gradcam_png_b64: string | null;
-  /** True when the VAD pipeline has detected active speech */
-  vad_active: boolean;
+export interface ShieldData {
+  verdict: Verdict;
+  riskScore: number;          // fused risk 0..100
+  spoofProbability: number;   // Layer-1 P(fake) 0..100
+  layers: { voice: number; intent: number; signal: number };
+  reasons: string[];
+  vadActive: boolean;
+  gradcam: string | null;     // base64 PNG
 }
 
-export interface EvidenceLog {
-  timestamp: string;
-  score: number;
+export interface EventLog {
+  t: string;
+  risk: number;
   verdict: string;
 }
 
-// ── Hook ──────────────────────────────────────────────────────────────────────
+export interface HoldInfo {
+  reference: string;
+  risk: number;
+  at: string;
+}
 
-export const useVoiceShield = () => {
-  const [data, setData] = useState<ShieldResponse>({
-    verdict: 'WAITING',
-    risk_score: 0,
-    layers: { voice_authenticity: 0, intent_risk: 0, call_signal_risk: 0 },
-    reasons: [],
-    gradcam_png_b64: null,
-    vad_active: false,
-  });
-  const [logs, setLogs] = useState<EvidenceLog[]>([]);
-  const [holdAlert, setHoldAlert] = useState<string | null>(null);
+const EMPTY: ShieldData = {
+  verdict: 'WAITING',
+  riskScore: 0,
+  spoofProbability: 0,
+  layers: { voice: 0, intent: 0, signal: 0 },
+  reasons: [],
+  vadActive: false,
+  gradcam: null,
+};
 
-  // Active call UUID returned by the backend — needed for all subsequent API calls
-  const activeCallIdRef = useRef<string | null>(null);
+const WAVE_LEN = 72;      // waveform bars retained
+const HISTORY_LEN = 90;   // risk-timeline points retained
+
+export function useVoiceShield() {
+  const [source, setSource] = useState<Source>(null);
+  const [replaySample, setReplaySample] = useState<string | null>(null);
+  const [data, setData] = useState<ShieldData>(EMPTY);
+  const [logs, setLogs] = useState<EventLog[]>([]);
+  const [riskHistory, setRiskHistory] = useState<number[]>([]);
+  const [waveform, setWaveform] = useState<number[]>(Array(WAVE_LEN).fill(0));
+  const [level, setLevel] = useState(0);
+  const [hold, setHold] = useState<HoldInfo | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const callIdRef = useRef<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // ── Audio chunk handler — fires from the AudioWorklet ────────────────────
+  // ── PCM chunk handler shared by mic + replay ──────────────────────────────
   const handleAudioChunk = useCallback((chunk: ArrayBuffer) => {
+    // Uniform audio level for the waveform, computed from the actual PCM.
+    const view = new Int16Array(chunk);
+    let sumSq = 0;
+    for (let i = 0; i < view.length; i++) {
+      const s = view[i] / 32768;
+      sumSq += s * s;
+    }
+    const rms = Math.sqrt(sumSq / Math.max(view.length, 1));
+    setLevel(rms);
+    setWaveform((prev) => [...prev.slice(1), Math.min(rms * 3, 1)]);
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(chunk);
     }
   }, []);
 
-  const { isRecording: isMonitoring, error: micError, startMic, stopMic } =
-    useMicStream(handleAudioChunk);
+  const mic = useMicStream(handleAudioChunk);
+  const finishRef = useRef<() => void>(() => {});
+  const replay = useReplayStream(handleAudioChunk, () => finishRef.current());
 
-  // ── Backend helpers ───────────────────────────────────────────────────────
-
-  const startCallSession = useCallback(async (): Promise<string> => {
-    const res = await fetch(`${API_BASE}/api/calls/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'mic' }),
-    });
-    if (!res.ok) throw new Error(`Failed to start call session: ${res.status}`);
+  // ── Backend REST ──────────────────────────────────────────────────────────
+  const startCall = useCallback(async (src: 'mic' | 'replay'): Promise<string> => {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/api/calls/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: src }),
+      });
+    } catch {
+      throw new Error('Cannot reach the backend on port 8000 — is it running?');
+    }
+    if (!res.ok) throw new Error(`Backend error starting call (HTTP ${res.status}).`);
     const json = await res.json();
     return json.call_id as string;
   }, []);
 
-  const stopCallSession = useCallback(async (callId: string) => {
+  const endCall = useCallback(async (callId: string) => {
     try {
       await fetch(`${API_BASE}/api/calls/${callId}/stop`, { method: 'POST' });
-    } catch (e) {
-      console.warn('Failed to stop call session', e);
+    } catch {
+      /* non-fatal */
     }
   }, []);
 
-  // ── WebSocket ─────────────────────────────────────────────────────────────
-
-  const connectWebSocket = useCallback((callUuid: string) => {
-    if (wsRef.current) return;
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = API_BASE.replace(/^https?:\/\//, '');
-    const wsUrl = `${wsProtocol}//${wsHost}/ws/stream/${callUuid}`;
-
-    const ws = new WebSocket(wsUrl);
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  const connectWS = useCallback((callId: string) => {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = API_BASE.replace(/^https?:\/\//, '');
+    const ws = new WebSocket(`${proto}//${host}/ws/stream/${callId}`);
     ws.binaryType = 'arraybuffer';
 
-    ws.onopen = () => console.log('[VoiceShield] WS connected, call_id=', callUuid);
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data as string);
-
-        switch (msg.type) {
-          case 'risk_update':
-            setData((prev) => ({
-              ...prev,
-              verdict: msg.verdict ?? prev.verdict,
-              risk_score: Math.round((msg.fused_risk_score ?? 0) * 100),
-              layers: {
-                voice_authenticity: Math.round((msg.spoof_probability ?? 0) * 100),
-                intent_risk: Math.round((msg.intent_risk ?? prev.layers.intent_risk) * 100),
-                call_signal_risk: Math.round((msg.call_signal_risk ?? prev.layers.call_signal_risk) * 100),
-              },
-              reasons: msg.matched_reasons?.length
-                ? msg.matched_reasons
-                : msg.is_flagged ? [`spoof_p=${msg.spoof_probability?.toFixed(2)}`] : [],
-              vad_active: msg.vad_active ?? prev.vad_active,
-              gradcam_png_b64: msg.gradcam_png_b64 ?? prev.gradcam_png_b64 ?? null,
-            }));
-
-            if (msg.verdict && msg.verdict !== 'WAITING') {
-              setLogs((prev) =>
-                [
-                  {
-                    timestamp: new Date().toLocaleTimeString(),
-                    score: Math.round((msg.fused_risk_score ?? 0) * 100),
-                    verdict: msg.verdict,
-                  },
-                  ...prev,
-                ].slice(0, 10),
-              );
-            }
-            break;
-
-          case 'vad_update':
-            setData((prev) => ({ ...prev, vad_active: msg.vad_active }));
-            break;
-
-          case 'hold_triggered':
-            setHoldAlert(`Transaction hold triggered: ${msg.mock_reference}`);
-            break;
-
-          case 'ping':
-            break; // server keepalive — ignore
-
-          case 'error':
-            console.error('[VoiceShield] WS error from server:', msg.detail);
-            break;
-
-          default:
-            console.warn('[VoiceShield] Unknown WS message type:', msg.type);
-        }
-      } catch (e) {
-        console.error('[VoiceShield] Failed to parse WS message', e);
-      }
-    };
-
+    ws.onopen = () => setStatus(null);
+    ws.onerror = () => setStatus('Connection issue — is the backend running on :8000?');
     ws.onclose = () => {
-      console.log('[VoiceShield] WS disconnected');
       wsRef.current = null;
     };
 
+    ws.onmessage = (event) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(event.data as string);
+      } catch {
+        return;
+      }
+      switch (msg.type) {
+        case 'risk_update': {
+          const risk = Math.round((msg.fused_risk_score ?? 0) * 100);
+          setData((prev) => ({
+            verdict: msg.verdict ?? prev.verdict,
+            riskScore: risk,
+            spoofProbability: Math.round((msg.spoof_probability ?? 0) * 100),
+            layers: {
+              voice: Math.round((msg.spoof_probability ?? 0) * 100),
+              intent: Math.round((msg.intent_risk ?? 0) * 100),
+              signal: Math.round((msg.call_signal_risk ?? 0) * 100),
+            },
+            reasons: msg.matched_reasons?.length ? msg.matched_reasons : prev.reasons,
+            vadActive: msg.vad_active ?? prev.vadActive,
+            gradcam: msg.gradcam_png_b64 ?? prev.gradcam,
+          }));
+          setRiskHistory((prev) => [...prev, risk].slice(-HISTORY_LEN));
+          if (msg.verdict && msg.verdict !== 'WAITING') {
+            setLogs((prev) =>
+              [{ t: new Date().toLocaleTimeString(), risk, verdict: msg.verdict }, ...prev].slice(0, 12),
+            );
+          }
+          break;
+        }
+        case 'vad_update':
+          setData((prev) => ({ ...prev, vadActive: msg.vad_active }));
+          break;
+        case 'hold_triggered':
+          setHold({
+            reference: msg.mock_reference ?? 'VS-HOLD',
+            risk: 0,
+            at: new Date(msg.triggered_at ?? Date.now()).toLocaleTimeString(),
+          });
+          break;
+        case 'error':
+          setStatus(msg.detail ?? 'Server error');
+          break;
+        default:
+          break;
+      }
+    };
     wsRef.current = ws;
   }, []);
 
-  // ── Public actions ────────────────────────────────────────────────────────
+  // ── Teardown (optionally keep the last results on screen) ──────────────────
+  const teardown = useCallback(
+    (reset: boolean) => {
+      mic.stopMic();
+      replay.stop();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (callIdRef.current) {
+        endCall(callIdRef.current);
+        callIdRef.current = null;
+      }
+      setLevel(0);
+      setSource(null);
+      if (reset) {
+        setData(EMPTY);
+        setLogs([]);
+        setRiskHistory([]);
+        setWaveform(Array(WAVE_LEN).fill(0));
+        setHold(null);
+        setReplaySample(null);
+      }
+    },
+    [mic, replay, endCall],
+  );
 
-  const startMonitoring = useCallback(async () => {
+  // Replay auto-finish keeps results visible (don't wipe the verdict/hold).
+  finishRef.current = () => teardown(false);
+
+  // ── Public actions ─────────────────────────────────────────────────────────
+  const beginSession = useCallback(
+    async (src: 'mic' | 'replay') => {
+      setData(EMPTY);
+      setLogs([]);
+      setRiskHistory([]);
+      setWaveform(Array(WAVE_LEN).fill(0));
+      setHold(null);
+      setStatus(null);
+      setSource(src);
+      const callId = await startCall(src);
+      callIdRef.current = callId;
+      connectWS(callId);
+      return callId;
+    },
+    [startCall, connectWS],
+  );
+
+  const startLive = useCallback(async () => {
     try {
-      const callUuid = await startCallSession();
-      activeCallIdRef.current = callUuid;
-      connectWebSocket(callUuid);
-      await startMic();
+      await beginSession('mic');
+      await mic.startMic();
     } catch (err) {
-      console.error('[VoiceShield] startMonitoring failed:', err);
+      setStatus(err instanceof Error ? err.message : 'Failed to start live call');
+      teardown(true);
     }
-  }, [startCallSession, connectWebSocket, startMic]);
+  }, [beginSession, mic, teardown]);
 
-  const stopMonitoring = useCallback(async () => {
-    stopMic();
+  const startReplay = useCallback(
+    async (url: string, label: string) => {
+      try {
+        setReplaySample(label);
+        await beginSession('replay');
+        await replay.start(url);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Failed to replay demo');
+        teardown(true);
+      }
+    },
+    [beginSession, replay, teardown],
+  );
 
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
+  const stop = useCallback(() => teardown(true), [teardown]);
 
-    if (activeCallIdRef.current) {
-      await stopCallSession(activeCallIdRef.current);
-      activeCallIdRef.current = null;
-    }
-
-    // Reset display state
-    setData({
-      verdict: 'WAITING',
-      risk_score: 0,
-      layers: { voice_authenticity: 0, intent_risk: 0, call_signal_risk: 0 },
-      reasons: [],
-      gradcam_png_b64: null,
-      vad_active: false,
-    });
-    setHoldAlert(null);
-  }, [stopMic, stopCallSession]);
-
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      // fire-and-forget on unmount — avoid async in useEffect return
-      stopMic();
+      mic.stopMic();
+      replay.stop();
       if (wsRef.current) wsRef.current.close();
-      if (activeCallIdRef.current) stopCallSession(activeCallIdRef.current);
+      if (callIdRef.current) endCall(callIdRef.current);
     };
-  }, [stopMic, stopCallSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isMonitoring = source !== null;
+  const error = mic.error || replay.error || status;
 
   return {
+    source,
+    replaySample,
     isMonitoring,
-    micError,
-    holdAlert,
-    startMonitoring,
-    stopMonitoring,
+    error,
     data,
     logs,
+    riskHistory,
+    waveform,
+    level,
+    hold,
+    replayProgress: replay.progress,
+    callId: callIdRef.current,
+    startLive,
+    startReplay,
+    stop,
   };
-};
+}

@@ -90,10 +90,10 @@ def score_call_signals(meta: Optional[Dict]) -> Dict:
             reasons.append(f"claims to be '{meta.get('claimed_entity')}' from a personal mobile")
             risk = max(risk, 0.55)
 
-    # 5. Not in contacts (weak signal on its own)
+    # 5. Not in contacts (neutral/advisory signal — normal for everyday calls)
     if meta.get("in_contacts") is False:
         reasons.append("caller not in contacts")
-        risk = max(risk, 0.2)
+        risk = max(risk, 0.05)
 
     # 6. Odd-hours unsolicited call
     hour = meta.get("hour_local")

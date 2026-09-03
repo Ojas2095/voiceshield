@@ -120,7 +120,14 @@ class VoiceShieldClassifier:
         repo_root = Path(__file__).resolve().parent.parent.parent
         if str(repo_root) not in sys.path:
             sys.path.insert(0, str(repo_root))
-        from ai.preprocessing import preprocess_tensor
+        from ai.preprocessing import (
+            preprocess_tensor,
+            compute_mel_spectrogram,
+            resample,
+            pad_or_trim,
+            TELEPHONY_SR,
+            WINDOW_SAMPLES_8K,
+        )
 
         models_dir = repo_root / "ai" / "models"
         head_w = Path(weights_path) if weights_path else models_dir / "best_wav2vec_head.pt"
@@ -128,6 +135,11 @@ class VoiceShieldClassifier:
         wav_name = settings.model_checkpoint  # e.g. facebook/wav2vec2-large-xlsr-53 (or -base for speed)
 
         self._preprocess = preprocess_tensor
+        self._compute_mel = compute_mel_spectrogram
+        self._resample = resample
+        self._pad_or_trim = pad_or_trim
+        self._telephony_sr = TELEPHONY_SR
+        self._window_samples_8k = WINDOW_SAMPLES_8K
         self._torch = torch
         self._mode = "untrained"
         self.detector = None
@@ -156,8 +168,6 @@ class VoiceShieldClassifier:
                 self.model_version = "untrained-v0"
                 logger.warning("No trained weights in %s — scores are unreliable.", models_dir)
             self.mel_cnn.eval()
-            from ai.preprocessing import compute_mel_spectrogram
-            self._compute_mel = compute_mel_spectrogram
 
     def warm_up(self) -> None:
         """Pay the cold-start cost once at server boot, not on the first live request."""
@@ -165,6 +175,11 @@ class VoiceShieldClassifier:
         logger.info("VoiceShieldClassifier warmed up on %s (%s)", self.device, self.model_version)
 
     def _infer_sync(self, window: np.ndarray) -> float:
+        # Energy gating: silence or near-silence is not synthetic fraud
+        rms = float(np.sqrt(np.mean(window ** 2)))
+        if rms < 0.004:
+            return 0.02  # Benign low-energy baseline
+
         torch = self._torch
         waveform = torch.from_numpy(window.astype(np.float32)).unsqueeze(0)
 
@@ -173,11 +188,14 @@ class VoiceShieldClassifier:
             result = self.detector.predict(chunk.waveform_16k, chunk.mel_spectrogram)
             return float(result["p_fake"])
 
-        # MelCNN-only path
-        mel = self._compute_mel(waveform, sr=16000)
+        # MelCNN-only path: match training pipeline (8kHz telephony log-mel)
+        waveform_8k = self._resample(waveform, 16000, self._telephony_sr)
+        waveform_8k = self._pad_or_trim(waveform_8k, self._window_samples_8k)
+        mel = self._compute_mel(waveform_8k, sr=self._telephony_sr)
         mel_tensor = mel.unsqueeze(0).to(self.device)
         with torch.no_grad():
-            return float(self.mel_cnn(mel_tensor).squeeze().item())
+            raw_score = float(self.mel_cnn(mel_tensor).squeeze().item())
+            return raw_score
 
     async def infer(self, window: np.ndarray) -> float:
         loop = asyncio.get_running_loop()

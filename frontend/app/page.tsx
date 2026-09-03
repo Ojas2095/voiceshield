@@ -7,6 +7,7 @@ import {
   Lock, FileText, ChevronRight, Radio, PhoneCall,
 } from 'lucide-react';
 import { useVoiceShield, type Verdict } from '../hooks/useVoiceShield';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 const DEMO_SAMPLES = [
   { id: 'real_en', label: 'Real Voice — English', file: '/demo/real_en.wav', kind: 'real' as const },
@@ -17,9 +18,9 @@ const DEMO_SAMPLES = [
 
 function riskMeta(v: Verdict) {
   switch (v) {
-    case 'REAL': return { label: 'LOW RISK', text: 'text-risk-low', bg: 'bg-risk-low', soft: 'bg-[#e7f4ec] border-[#bfe3cd]' };
-    case 'SUSPICIOUS': return { label: 'MEDIUM RISK', text: 'text-risk-med', bg: 'bg-risk-med', soft: 'bg-[#fbf3e2] border-[#f0dcae]' };
-    case 'FRAUD': return { label: 'HIGH RISK', text: 'text-risk-high', bg: 'bg-risk-high', soft: 'bg-[#fbeae7] border-[#f0c3bb]' };
+    case 'REAL': return { label: 'LOW RISK', text: 'text-risk-low', bg: 'bg-risk-low', soft: 'bg-low-soft border-low-line' };
+    case 'SUSPICIOUS': return { label: 'MEDIUM RISK', text: 'text-risk-med', bg: 'bg-risk-med', soft: 'bg-med-soft border-med-line' };
+    case 'FRAUD': return { label: 'HIGH RISK', text: 'text-risk-high', bg: 'bg-risk-high', soft: 'bg-high-soft border-high-line' };
     default: return { label: 'AWAITING AUDIO', text: 'text-muted', bg: 'bg-muted', soft: 'bg-canvas border-line' };
   }
 }
@@ -54,22 +55,23 @@ function TopBar({ source, started, onStop, error }: any) {
           <Link href="/evidence" className="text-sm text-brand hover:text-brand-dark flex items-center gap-1.5">
             <FileText className="w-4 h-4" /> Evidence &amp; History
           </Link>
+          <ThemeToggle />
           <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md border ${
-            live ? 'text-risk-low border-[#bfe3cd] bg-[#e7f4ec]' : 'text-muted border-line bg-canvas'
+            live ? 'text-risk-low border-low-line bg-low-soft' : 'text-muted border-line bg-canvas'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-risk-low animate-pulse' : 'bg-muted'}`} />
             {statusLabel}
           </span>
           {started && (
             <button onClick={onStop}
-              className="text-sm font-medium text-risk-high border border-[#f0c3bb] bg-[#fbeae7] hover:bg-[#f7ddd7] px-3 py-1.5 rounded-md flex items-center gap-1.5">
+              className="text-sm font-medium text-risk-high border border-high-line bg-high-soft hover:opacity-80 px-3 py-1.5 rounded-md flex items-center gap-1.5">
               <Square className="w-3.5 h-3.5" /> Stop
             </button>
           )}
         </div>
       </div>
       {error && (
-        <div className="bg-[#fbf3e2] border-t border-[#f0dcae] text-[#8a5a10] text-sm px-6 py-2 text-center">
+        <div className="bg-med-soft border-t border-med-line text-risk-med text-sm px-6 py-2 text-center">
           {error}
         </div>
       )}
@@ -121,7 +123,7 @@ function StartScreen({ vs }: any) {
             {DEMO_SAMPLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
           <button onClick={() => vs.startReplay(chosen.file, chosen.label)}
-            className="mt-3 border border-brand text-brand hover:bg-[#eaf1f9] font-medium rounded-md py-2.5 flex items-center justify-center gap-2">
+            className="mt-3 border border-brand text-brand hover:bg-brand-soft font-medium rounded-md py-2.5 flex items-center justify-center gap-2">
             <Play className="w-4 h-4" /> Replay Selected
           </button>
         </div>
@@ -211,6 +213,16 @@ function Dashboard({ vs }: any) {
         <Waveform bars={vs.waveform} active={vs.isMonitoring} />
       </div>
 
+      {/* Grad-CAM (secondary — shows only when the backend returns a heatmap) */}
+      {vs.data.gradcam && (
+        <div className="panel p-5">
+          <p className="eyebrow mb-1">Acoustic Analysis — Grad-CAM</p>
+          <p className="text-xs text-muted mb-3">Highlighted regions are the spectral features that most influenced the model&apos;s prediction.</p>
+          <img src={`data:image/png;base64,${vs.data.gradcam}`} alt="Grad-CAM spectrogram heatmap"
+            className="w-full rounded-md border border-line" />
+        </div>
+      )}
+
       {/* Row 2: signal + authenticity */}
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="panel p-5">
@@ -226,7 +238,7 @@ function Dashboard({ vs }: any) {
         <div className="panel p-5 lg:col-span-2">
           <p className="eyebrow mb-3">Authenticity Breakdown</p>
           <Bar label="Voice authenticity (Layer 1)" value={vs.data.layers.voice} color="bg-brand" />
-          <Bar label="Intent risk (Layer 2)" value={vs.data.layers.intent} color="bg-[#7a5bd0]" />
+          <Bar label="Intent risk (Layer 2)" value={vs.data.layers.intent} color="bg-evidence" />
           <Bar label="Call signals (Layer 3)" value={vs.data.layers.signal} color="bg-risk-med" />
         </div>
       </div>
@@ -361,7 +373,7 @@ function StageBar({ isMonitoring, verdict, hold, events }: any) {
 
 function PreventCard({ hold, risk }: { hold: any; risk: number }) {
   return (
-    <div className="panel border border-[#f0c3bb] bg-[#fbeae7] p-5">
+    <div className="panel border border-high-line bg-high-soft p-5">
       <div className="flex items-start gap-4">
         <ShieldAlert className="w-6 h-6 text-risk-high mt-0.5" />
         <div className="flex-1">

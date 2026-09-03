@@ -2,32 +2,45 @@ import type { Config } from "tailwindcss";
 
 /**
  * VoiceShield design system — a restrained fraud-monitoring console.
- * Light neutral canvas, navy typography, one restrained brand blue, and
- * colour used ONLY to communicate risk (green/amber/red) and evidence (purple).
+ * Colours are CSS variables (R G B triplets) so the same tokens work in light
+ * and dark themes (see globals.css). `<alpha-value>` keeps opacity utilities
+ * like `bg-brand/70` working.
  */
+const c = (v: string) => `rgb(var(${v}) / <alpha-value>)`;
+
 const config: Config = {
+  darkMode: "class",
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./hooks/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       colors: {
-        canvas: "#f3f5f8",   // page background
-        surface: "#ffffff",  // cards / panels
-        line: "#e3e7ee",     // hairline borders
-        navy: "#0f2540",     // headings / primary text
-        ink: "#1f2a37",      // body text
-        muted: "#6b7580",    // secondary text
-        brand: "#2563a8",    // restrained blue (actions, links, accents)
-        "brand-dark": "#1d4e85",
+        canvas: c("--c-canvas"),
+        surface: c("--c-surface"),
+        line: c("--c-line"),
+        navy: c("--c-navy"),
+        ink: c("--c-ink"),
+        muted: c("--c-muted"),
+        brand: c("--c-brand"),
+        "brand-dark": c("--c-brand-dark"),
+        "brand-soft": c("--c-brand-soft"),
+        evidence: c("--c-evidence"),
+        "evidence-soft": c("--c-evidence-soft"),
         risk: {
-          low: "#1a7f4b",    // green — authentic / low
-          med: "#b7791f",    // amber — suspicious / medium
-          high: "#c0392b",   // red — fraud / high
+          low: c("--c-risk-low"),
+          med: c("--c-risk-med"),
+          high: c("--c-risk-high"),
         },
-        evidence: "#6b3fa0", // purple — reserved for the evidence chain
+        "low-soft": c("--c-low-soft"),
+        "low-line": c("--c-low-line"),
+        "med-soft": c("--c-med-soft"),
+        "med-line": c("--c-med-line"),
+        "high-soft": c("--c-high-soft"),
+        "high-line": c("--c-high-line"),
       },
       fontFamily: {
         sans: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "Arial", "sans-serif"],
@@ -35,12 +48,8 @@ const config: Config = {
       },
       boxShadow: {
         card: "0 1px 2px rgba(15,37,64,0.04), 0 1px 3px rgba(15,37,64,0.06)",
-        raise: "0 4px 12px rgba(15,37,64,0.08)",
       },
-      borderRadius: {
-        md: "6px",
-        lg: "8px",
-      },
+      borderRadius: { md: "6px", lg: "8px" },
     },
   },
   plugins: [],

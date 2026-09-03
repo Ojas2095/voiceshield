@@ -5,6 +5,7 @@ import {
   Shield, ArrowLeft, RefreshCw, Download, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, ShieldCheck, ShieldAlert, ShieldX, KeyRound, Hash, Clock,
 } from 'lucide-react';
+import { ThemeToggle } from '../../components/ThemeToggle';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -47,9 +48,9 @@ const verdictIcon = (s: number) =>
   s >= 0.4 ? <ShieldX className="w-3.5 h-3.5 text-risk-med" /> :
   <ShieldCheck className="w-3.5 h-3.5 text-risk-low" />;
 const statusPill: Record<string, string> = {
-  active: 'text-risk-low border-[#bfe3cd] bg-[#e7f4ec]',
+  active: 'text-risk-low border-low-line bg-low-soft',
   ended: 'text-muted border-line bg-canvas',
-  held: 'text-risk-high border-[#f0c3bb] bg-[#fbeae7]',
+  held: 'text-risk-high border-high-line bg-high-soft',
 };
 const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { hour12: false });
 const trunc = (h: string) => (h ? `${h.slice(0, 10)}…${h.slice(-8)}` : '—');
@@ -87,7 +88,7 @@ function EvidencePanel({ callId, onClose }: { callId: string; onClose: () => voi
   const verified = data ? data.chain_valid && data.signatures_valid : false;
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy/30 flex items-start justify-center overflow-y-auto p-4 pt-10">
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto p-4 pt-10">
       <div className="w-full max-w-4xl panel overflow-hidden">
         {/* header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-line">
@@ -102,7 +103,7 @@ function EvidencePanel({ callId, onClose }: { callId: string; onClose: () => voi
             <button onClick={load} title="Re-verify"
               className="p-2 text-muted hover:text-navy"><RefreshCw className="w-4 h-4" /></button>
             <button onClick={exportJson} disabled={!data}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-line text-brand hover:bg-[#eaf1f9] disabled:opacity-40">
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-line text-brand hover:bg-brand-soft disabled:opacity-40">
               <Download className="w-3.5 h-3.5" /> Export
             </button>
             <button onClick={onClose}
@@ -112,7 +113,7 @@ function EvidencePanel({ callId, onClose }: { callId: string; onClose: () => voi
 
         {/* Verify Integrity result — the money moment */}
         {data && data.entry_count > 0 && (
-          <div className={`px-6 py-4 border-b ${verified ? 'bg-[#e7f4ec] border-[#bfe3cd]' : 'bg-[#fbeae7] border-[#f0c3bb]'}`}>
+          <div className={`px-6 py-4 border-b ${verified ? 'bg-low-soft border-low-line' : 'bg-high-soft border-high-line'}`}>
             <div className="flex items-center gap-3">
               {verified ? <CheckCircle2 className="w-6 h-6 text-risk-low" /> : <XCircle className="w-6 h-6 text-risk-high" />}
               <div className="flex-1">
@@ -135,7 +136,7 @@ function EvidencePanel({ callId, onClose }: { callId: string; onClose: () => voi
         )}
 
         {/* BSA note */}
-        <div className="px-6 py-2.5 border-b border-line bg-[#f6f2fb]">
+        <div className="px-6 py-2.5 border-b border-line bg-evidence-soft">
           <p className="text-xs text-evidence/90">
             SHA-256 hash-chain, Ed25519-signed — tamper-evident and non-repudiable under{' '}
             <strong>Bharatiya Sakshya Adhiniyam (BSA) 2023, §63</strong>. No raw audio is stored (DPDP 2023).
@@ -160,7 +161,7 @@ function EvidencePanel({ callId, onClose }: { callId: string; onClose: () => voi
                   <span className="text-xs text-muted flex-1">{p.window_start_ms}–{p.window_end_ms} ms</span>
                   <span className="mono text-xs text-muted hidden lg:inline">{trunc(entry.entry_hash)}</span>
                   <span className="text-xs text-muted">{new Date(entry.created_at).toLocaleTimeString('en-IN')}</span>
-                  {p.is_flagged && <span className="text-[11px] font-semibold text-risk-high bg-[#fbeae7] border border-[#f0c3bb] px-1.5 py-0.5 rounded">FLAGGED</span>}
+                  {p.is_flagged && <span className="text-[11px] font-semibold text-risk-high bg-high-soft border border-high-line px-1.5 py-0.5 rounded">FLAGGED</span>}
                   {open ? <ChevronDown className="w-4 h-4 text-muted" /> : <ChevronRight className="w-4 h-4 text-muted" />}
                 </button>
                 {open && (
@@ -233,6 +234,7 @@ export default function EvidencePage() {
             <span className="text-muted text-xs border-l border-line pl-2.5 ml-1 hidden sm:inline">Call History &amp; Evidence</span>
           </div>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <button onClick={loadCalls} className="text-sm text-muted hover:text-navy flex items-center gap-1.5"><RefreshCw className="w-4 h-4" /> Refresh</button>
             <Link href="/" className="text-sm text-brand hover:text-brand-dark flex items-center gap-1.5"><ArrowLeft className="w-4 h-4" /> Console</Link>
           </div>

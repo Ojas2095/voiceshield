@@ -2,44 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
-/* VoiceShield — fraud-monitoring console base styles (light, restrained). */
+/* VoiceShield — fraud-monitoring console. Colour tokens as "R G B" triplets so
+   Tailwind's rgb(var(--x) / <alpha-value>) works and light/dark just swap vars. */
 :root {
-  --canvas: #f3f5f8;
-  --ink: #1f2a37;
+  --c-canvas: 243 245 248;
+  --c-surface: 255 255 255;
+  --c-line: 227 231 238;
+  --c-navy: 15 37 64;
+  --c-ink: 31 42 55;
+  --c-muted: 107 117 128;
+  --c-brand: 37 99 168;
+  --c-brand-dark: 29 78 133;
+  --c-brand-soft: 234 241 249;
+  --c-evidence: 107 63 160;
+  --c-evidence-soft: 246 242 251;
+  --c-risk-low: 26 127 75;
+  --c-risk-med: 183 121 31;
+  --c-risk-high: 192 57 43;
+  --c-low-soft: 231 244 236;
+  --c-low-line: 191 227 205;
+  --c-med-soft: 251 243 226;
+  --c-med-line: 240 220 174;
+  --c-high-soft: 251 234 231;
+  --c-high-line: 240 195 187;
 }
 
-html,
-body {
-  background: var(--canvas);
-  color: var(--ink);
+.dark {
+  --c-canvas: 14 20 27;
+  --c-surface: 22 29 38;
+  --c-line: 42 52 65;
+  --c-navy: 230 237 245;
+  --c-ink: 205 214 224;
+  --c-muted: 138 149 163;
+  --c-brand: 84 152 220;
+  --c-brand-dark: 58 114 173;
+  --c-brand-soft: 22 40 60;
+  --c-evidence: 168 122 220;
+  --c-evidence-soft: 34 26 48;
+  --c-risk-low: 52 182 110;
+  --c-risk-med: 217 154 58;
+  --c-risk-high: 232 96 80;
+  --c-low-soft: 18 40 28;
+  --c-low-line: 31 77 51;
+  --c-med-soft: 42 35 18;
+  --c-med-line: 92 74 31;
+  --c-high-soft: 42 21 18;
+  --c-high-line: 107 47 40;
+}
+
+html, body {
+  background: rgb(var(--c-canvas));
+  color: rgb(var(--c-ink));
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Section label — small, uppercase, tracked; used on every panel header. */
 .eyebrow {
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #6b7580;
+  color: rgb(var(--c-muted));
 }
 
-/* Monospace for hashes, references, IDs. */
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-/* Panel — the standard console card. */
 .panel {
-  background: #ffffff;
-  border: 1px solid #e3e7ee;
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 37, 64, 0.04), 0 1px 3px rgba(15, 37, 64, 0.06);
 }
+.dark .panel { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
 
-/* Subtle focus ring for keyboard users. */
-:focus-visible {
-  outline: 2px solid #2563a8;
-  outline-offset: 2px;
-}
+:focus-visible { outline: 2px solid rgb(var(--c-brand)); outline-offset: 2px; }

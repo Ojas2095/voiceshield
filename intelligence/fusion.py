@@ -63,6 +63,10 @@ def fuse_layers(
     # and normal phone numbers, escalation is capped so innocent calls are never flagged as FRAUD.
     if i == 0.0 and s <= 0.20 and v < 0.70:
         escalated = min(0.35, escalation * max(v, i, s))
+    elif i >= 0.50:
+        # High-confidence scam intent (OTP phishing, digital arrest, authority extortion)
+        # Directly escalates to FRAUD so human scammers trigger transaction holds
+        escalated = max(0.72, i)
     else:
         escalated = escalation * max(v, i, s)
 

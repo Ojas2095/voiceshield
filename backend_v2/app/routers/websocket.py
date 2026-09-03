@@ -163,6 +163,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                         asr_audio,
                         transcriber,
                         call_metadata,
+                        accumulated_transcript,
                     )
                     last_intent_risk = float(intent_result.get("intent_risk", 0.0))
                     last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
@@ -186,7 +187,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     three_layer_score = spoof_prob
 
                 fused_score = fusion.update(three_layer_score)
-                is_flagged = spoof_prob >= settings.flag_threshold
+                is_flagged = (spoof_prob >= settings.flag_threshold) or (last_intent_risk >= 0.50) or (fused_score >= settings.hold_threshold)
                 model_ver = getattr(classifier, "model_version", settings.model_version)
                 verdict = to_verdict(fused_score)
 
@@ -299,6 +300,7 @@ def _run_intelligence_sync(
     audio: np.ndarray,
     transcriber,
     call_metadata: dict | None = None,
+    accumulated_text: str = "",
 ) -> tuple[dict, dict, str | None, str]:
     """
     Synchronous wrapper for ASR → intent + call signals.
@@ -310,7 +312,8 @@ def _run_intelligence_sync(
     transcript = asr_out.get("text", "") or ""
     language = asr_out.get("language")
 
-    intent_result = score_intent(transcript) if transcript.strip() else {
+    full_text = (accumulated_text + " " + transcript).strip()
+    intent_result = score_intent(full_text) if full_text else {
         "intent_risk": 0.0, "categories": {}, "matched": [], "top_category": None
     }
 

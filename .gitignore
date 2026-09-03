@@ -50,3 +50,6 @@ desktop.ini
 *.db
 *.sqlite3
 test_*.db
+
+# Design reference (Stitch export) — local only, never publish
+/Google Stitch/

@@ -295,7 +295,7 @@ def train_wav2vec_head(
             best_val_acc = val_acc
             save_path = os.path.join(output_dir, "best_wav2vec_head.pt")
             torch.save(head.state_dict(), save_path)
-            print(f"  ✓ Saved best wav2vec head (val_acc={val_acc:.1f}%) → {save_path}")
+            print(f"  [OK] Saved best wav2vec head (val_acc={val_acc:.1f}%) -> {save_path}")
 
     print(f"\nwav2vec2 head training complete. Best val accuracy: {best_val_acc:.1f}%")
     return head

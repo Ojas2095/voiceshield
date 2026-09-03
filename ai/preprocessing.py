@@ -53,12 +53,16 @@ def pcm_bytes_to_tensor(raw_pcm: bytes, source_sr: int = 16000) -> torch.Tensor:
     return torch.from_numpy(audio_np).unsqueeze(0)
 
 
+_resamplers: dict = {}
+
 def resample(waveform: torch.Tensor, orig_sr: int, target_sr: int) -> torch.Tensor:
     """Resample audio to a target sample rate."""
     if orig_sr == target_sr:
         return waveform
-    resampler = torchaudio.transforms.Resample(orig_freq=orig_sr, new_freq=target_sr)
-    return resampler(waveform)
+    key = (orig_sr, target_sr)
+    if key not in _resamplers:
+        _resamplers[key] = torchaudio.transforms.Resample(orig_freq=orig_sr, new_freq=target_sr)
+    return _resamplers[key](waveform)
 
 
 def apply_telephony_degradation(waveform: torch.Tensor, sr: int = 16000) -> torch.Tensor:

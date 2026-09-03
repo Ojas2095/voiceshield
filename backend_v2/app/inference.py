@@ -188,21 +188,19 @@ class VoiceShieldClassifier:
             result = self.detector.predict(chunk.waveform_16k, chunk.mel_spectrogram)
             return float(result["p_fake"])
 
-        # MelCNN-only path: match training pipeline (8kHz telephony log-mel)
+        # MelCNN inference on 8kHz telephony log-mel spectrogram
         waveform_8k = self._resample(waveform, 16000, self._telephony_sr)
         waveform_8k = self._pad_or_trim(waveform_8k, self._window_samples_8k)
         mel = self._compute_mel(waveform_8k, sr=self._telephony_sr)
         mel_tensor = mel.unsqueeze(0).to(self.device)
         with torch.no_grad():
-            raw_score = float(self.mel_cnn(mel_tensor).squeeze().item())
+            raw_cnn = float(self.mel_cnn(mel_tensor).squeeze().item())
 
-        # Acoustic Vocoder Biometric Validation:
-        # Real human vocal tracts exhibit steep glottal roll-off (-12 dB/octave) above 2.5 kHz.
-        # Neural vocoders (HiFi-GAN, WaveGlow, BigVGAN) generate high-frequency phase jitter in 2.8-3.9 kHz.
+        # Acoustic Vocoder Spectral Analysis:
+        # Measure continuous energy ratio in vocoder carrier band (2.8-3.9 kHz vs low-band 250-2200 Hz).
         window_np = window.astype(np.float32)
         n_samples = min(len(window_np), 32000)
-        chunk = window_np[:n_samples]
-        fft_mag = np.abs(np.fft.rfft(chunk))
+        fft_mag = np.abs(np.fft.rfft(window_np[:n_samples]))
         freqs = np.fft.rfftfreq(n_samples, 1.0 / 16000.0)
 
         hf_mask = (freqs >= 2800) & (freqs <= 3900)
@@ -212,19 +210,14 @@ class VoiceShieldClassifier:
         lf_energy = float(np.mean(fft_mag[lf_mask] ** 2)) + 1e-9
         hf_ratio = hf_energy / lf_energy
 
-        # Calibrate against vocoder signature:
-        # Telephony-degraded genuine human speech has hf_ratio < 0.19.
-        # Synthetic neural vocoder jitter produces hf_ratio > 0.24.
-        if hf_ratio < 0.19:
-            # Genuine biological speech: dampens spurious CNN spikes on human mic audio
-            calibrated = min(raw_score, 0.12) * (hf_ratio / 0.19)
-        elif hf_ratio < 0.24:
-            # Transition zone
-            t = (hf_ratio - 0.19) / (0.24 - 0.19)
-            calibrated = 0.12 + t * (max(raw_score, 0.70) - 0.12)
-        else:
-            # Confirmed neural vocoder artifact
-            calibrated = max(raw_score, 0.85)
+        # Continuous smooth logistic acoustic prior (no step discontinuities or hard overrides)
+        # Centered at 0.35 with soft scale 0.08:
+        # Real human speech (hf_ratio < 0.15) -> p_vocoder < 0.07
+        # Severe vocoder artifacts (hf_ratio > 0.50) -> p_vocoder > 0.87
+        p_vocoder = 1.0 / (1.0 + float(np.exp(-(hf_ratio - 0.35) / 0.08)))
+
+        # Soft Bayesian ensemble: 75% trained neural network + 25% continuous acoustic physics prior
+        calibrated = 0.75 * raw_cnn + 0.25 * p_vocoder
 
         return round(float(np.clip(calibrated, 0.0001, 0.9999)), 4)
 

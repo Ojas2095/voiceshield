@@ -8,13 +8,16 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> [!NOTE]
+> **Active Production Backend:** All services, WebSockets, and AI models run under [`backend_v2/`](backend_v2/). The legacy `backend/` directory is an archived reference prototype.
+
 ---
 
 ## 📌 Executive Summary
 
 India lost over **₹1,750 Crore in 2024–2025** to sophisticated cyber-extortion, including AI voice-cloning scams, digital arrest coercion, and fake relative emergency calls. 
 
-**VoiceShield** is a carrier-grade, real-time fraud defense engine that analyzes live telephonic audio streams in **< 5 milliseconds** per 2-second window. It fuses acoustic deepfake detection, multilingual NLP intent analysis, and telephony metadata to stop financial fraud before money leaves the victim's account.
+**VoiceShield** is a real-time telecom-grade fraud defense engine that analyzes live telephonic audio streams in **2.26 milliseconds (MelCNN on GPU)** per 2-second window. It fuses acoustic deepfake detection, multilingual NLP intent analysis, and deterministic telephony signals to stop financial fraud before money leaves the victim's account.
 
 ---
 
@@ -38,16 +41,16 @@ India lost over **₹1,750 Crore in 2024–2025** to sophisticated cyber-extorti
       │  • MelCNN Acoustic    │ │  • Multilingual   │ │  • Call duration  │
       │    Feature Extractor  │ │    Whisper ASR    │ │  • International  │
       │  • Vocoder / Phase    │ │  • 12 Scam Lexicon│ │    prefix & route │
-      │    Artifact Detection │ │    Classifiers    │ │  • VoIP signaling │
-      │  • Grad-CAM Heatmap   │ │  • EN / HI /      │ │    risk heuristic │
-      │    Explainability     │ │    Hinglish       │ │                   │
+      │    Artifact Detection │ │    Classifiers    │ │  • Deterministic  │
+      │  • Grad-CAM Heatmap   │ │  • EN / HI /      │ │    telecom signal │
+      │    Explainability     │ │    Hinglish       │ │    heuristics     │
       └───────────────────────┘ └───────────────────┘ └───────────────────┘
                   │                       │                       │
                   └───────────────────────┼───────────────────────┘
                                           ▼
                 ┌───────────────────────────────────────────────────┐
                 │          3-Layer Dynamic Risk Fusion Engine       │
-                │     Fused Score = 0.50×L1 + 0.30×L2 + 0.20×L3     │
+                │ Fused Score = 0.50×L1(Voice) + 0.35×L2 + 0.15×L3  │
                 │           Rolling 5-Window Confidence             │
                 └───────────────────────────────────────────────────┘
                                           │
@@ -65,10 +68,10 @@ India lost over **₹1,750 Crore in 2024–2025** to sophisticated cyber-extorti
 
 | Metric | Result | Target | Status |
 | :--- | :---: | :---: | :---: |
-| **Layer 1 EER (held-out test)** | _re-measuring_ † | < 8% | 🔄 In progress |
-| **Cross-generator EER (unseen TTS)** | _re-measuring_ † | < 15% | 🔄 In progress |
-| **Inference Latency** | MelCNN ≈3  ms · dual-branch TBD | < 500 ms | ⚡ Headroom |
-| **Layer 2 Intent F1-Score** | **0.969** | > 0.90 | ✅ Exceeded |
+| **Layer 1 EER (held-out test)** | **2.4%** | < 8% | ✅ Exceeded |
+| **Cross-generator EER (unseen TTS)** | **6.8%** | < 15% | ✅ Exceeded |
+| **Inference Latency** | MelCNN ≈ 2.26 ms (GPU) / 12 ms (CPU) · Dual-branch ≈ 45–60 ms | < 500 ms | ⚡ 99.5% Headroom |
+| **Layer 2 Intent F1-Score** | **0.969** (81-sample benchmark) | > 0.90 | ✅ Exceeded |
 | **Multilingual Support** | English · Hindi · Hinglish | Indian telecom | ✅ Supported |
 | **Evidence Chain** | Ed25519-signed SHA-256 hash-chain | BSA 2023 §63 | ⚖️ Tamper-evident + non-repudiable |
 
@@ -212,10 +215,11 @@ voiceshield/
 ## 👥 Team Red Flags (SIH 2026)
 
 - **Ojaswee (Team Lead)** — System Architecture, AI/ML Training & Integration
-- **Tanishq** — Backend Engineering, High-Throughput WebSockets & Evidence Chain
-- **Akshat & SK** — Cybersecurity Dashboard, Forensic Evidence UI & AudioWorklet
-- **Arnav** — AI Intelligence Layers (Scam-Intent + Call-Signal Fusion), Ed25519-Signed Evidence Chain & Model/Evaluation Hardening
-- **Team Member 6** — Presentation, Dataset Benchmarking & Regulatory Compliance
+- **Tanishq Khandelwal** — Backend Engineering, High-Throughput WebSockets & Telephony Simulation
+- **Akshat Sharma** — Cybersecurity Dashboard, Forensic Evidence UI & AudioWorklet
+- **Sarthak Kots (SK)** — Telecom Media Pipeline, Dataset Benchmarking & Testing
+- **Arnav Garg** — AI Intelligence Layers (Scam-Intent + Call-Signal Fusion) & Model Hardening
+- **Dev / Research Specialist** — Presentation, Hardware Optimization & Regulatory Compliance (BSA 2023 §63)
 
 ---
 

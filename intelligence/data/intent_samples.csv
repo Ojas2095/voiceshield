@@ -1,0 +1,82 @@
+text,label,language,category
+"Hi Mom, I am running late from office, see you at dinner.",0,en,benign
+"Let's schedule the project sync meeting for 3 PM tomorrow.",0,en,benign
+"Can you please send me the presentation slides over email?",0,en,benign
+"The cricket match yesterday was absolutely thrilling!",0,en,benign
+"I'll pick up the groceries on my way back home.",0,en,benign
+"Please find attached the invoice for last month's cloud services.",0,en,benign
+"Doctor appointment is confirmed for Friday at 10 AM.",0,en,benign
+"Happy Birthday! Wishing you a wonderful year ahead.",0,en,benign
+"Did you finish reading that research paper on neural networks?",0,en,benign
+"The weather today is very pleasant in Delhi.",0,en,benign
+"Let's book the train tickets for the weekend trip.",0,en,benign
+"Thanks for the help with the codebase setup yesterday.",0,en,benign
+"What time does the college library close today?",0,en,benign
+"Please review the pull request on GitHub when you get time.",0,en,benign
+"Hey bhai, kal college aayega kya? Attendance kam hai meri.",0,hinglish,benign
+"Bhai sham ko chai pe milte hain tapri pe.",0,hinglish,benign
+"Ghar kab tak pahuchega? Mummy puch rahi thi.",0,hinglish,benign
+"Bhai assignment submit kar diya tune ya bacha hai?",0,hinglish,benign
+"Movie ke tickets book kar diye hain 7 baje ke show ke.",0,hinglish,benign
+"Aaj ka mausam kafi accha hai, ghumne chalte hain.",0,hinglish,benign
+"Bhai mera laptop format karna hai thoda help kar dena.",0,hinglish,benign
+"नमस्ते, क्या आप कल की मीटिंग में आ रहे हैं?",0,hi,benign
+"आज शाम को घर जल्दी आ जाना, मेहमान आने वाले हैं।",0,hi,benign
+"कृपया मुझे कल के क्लास नोट्स भेज दीजिए।",0,hi,benign
+"आज का खाना बहुत स्वादिष्ट बना है।",0,hi,benign
+"ट्रेन अपने समय पर आ रही है, स्टेशन पहुंच जाइए।",0,hi,benign
+"Dear customer, your SBI account is blocked. Share 6-digit OTP to verify.",1,en,credential_theft
+"This is HDFC Bank security. Please tell me the OTP sent to your mobile.",1,en,credential_theft
+"Your debit card is suspended. Provide CVV and expiry date immediately.",1,en,credential_theft
+"Immediate action required: verify your netbanking password to prevent permanent lock.",1,en,credential_theft
+"We detected unauthorized transaction of 50000 rupees. Share OTP to cancel it.",1,en,credential_theft
+"Confirm your Aadhaar number and OTP to keep your bank account active.",1,en,credential_theft
+"Dear user, your Paytm KYC has expired. Enter OTP to complete instant verification.",1,en,credential_theft
+"This is Inspector Sharma from Delhi Cyber Crime Cell. You are under digital arrest.",1,en,authority_impersonation
+"CBI has issued an arrest warrant against your PAN card for money laundering.",1,en,authority_impersonation
+"This is Customs Department Mumbai Airport. Illegal parcel found in your name.",1,en,authority_impersonation
+"Supreme Court warrant issued. Stay on this call and do not disconnect.",1,en,authority_impersonation
+"Telecom Regulatory Authority of India: All SIM cards registered on your ID will be blocked in 2 hours.",1,en,authority_impersonation
+"Urgent: Transfer 25000 rupees to clearing account within 15 minutes to avoid police raid.",1,en,urgency_threat
+"If you do not pay the penalty fine now, police will reach your home address.",1,en,urgency_threat
+"Your electricity connection will be disconnected tonight at 9:30 PM. Pay bill immediately.",1,en,urgency_threat
+"You have won 25 Lakh rupees in KBC lottery. Pay 5000 registration tax to claim prize.",1,en,financial_fraud
+"Congratulations! Pre-approved personal loan of 5 Lakh without documents. Pay processing fee.",1,en,financial_fraud
+"Sir aapka bank account block ho gaya hai, turant 6 digit OTP batao verify karne ke liye.",1,hinglish,credential_theft
+"Main State Bank head office se bol raha hu, aapka ATM card expire ho raha hai, details bataiye.",1,hinglish,credential_theft
+"Aapke number pe ek OTP aaya hoga, jaldi batao warna account freeze ho jayega.",1,hinglish,credential_theft
+"Paytm KYC update nahi kiya to 24 ghante me wallet band ho jayega, link pe click karo.",1,hinglish,credential_theft
+"Aapke account se 75000 ka fraud transaction ho raha hai, cancel karne ke liye OTP do.",1,hinglish,credential_theft
+"Main Delhi Police Cyber Cell se DCP Mishra baat kar raha hu. Aapke khilaf arrest warrant hai.",1,hinglish,authority_impersonation
+"Aapke naam pe Mumbai customs me illegal drugs ka parcel pakda gaya hai, aap digital arrest me hain.",1,hinglish,authority_impersonation
+"CBI raid padne wali hai aapke ghar pe agar turant penalty pay nahi ki.",1,hinglish,authority_impersonation
+"TRAI se notice hai, 2 ghante me aapke saare phone number block kar diye jayenge.",1,hinglish,authority_impersonation
+"Aadhaar card money laundering me use hua hai, call disconnect mat karna warna police aayegi.",1,hinglish,authority_impersonation
+"Turant is UPI ID pe 50000 bhejo warna abhi FIR darj ho jayegi.",1,hinglish,urgency_threat
+"10 minute ke andar fine bharna padega warna police gadi bhej rahe hain aapke ghar.",1,hinglish,urgency_threat
+"Aapki bijli ka connection aaj raat 9 baje kaat diya jayega, turant is number pe call karo.",1,hinglish,urgency_threat
+"Aapko 25 lakh ki lottery lagi hai, 10000 transfer karo prize money release karne ke liye.",1,hinglish,financial_fraud
+"Aapka 10 lakh ka pre-approved loan pass ho gaya hai, bas 2000 processing fee jama kijiye.",1,hinglish,financial_fraud
+"प्रिय ग्राहक, आपका बैंक खाता ब्लॉक हो गया है। कृपया अपना 6 अंकों का ओटीपी बताएं।",1,hi,credential_theft
+"आपका एटीएम कार्ड बंद कर दिया गया है। चालू रखने के लिए सीवीवी और ओटीपी तुरंत दर्ज करें।",1,hi,credential_theft
+"केवाईसी अपडेट न होने के कारण आपका खाता 24 घंटे में फ्रीज हो जाएगा, ओटीपी साझा करें।",1,hi,credential_theft
+"मैं दिल्ली पुलिस साइबर सेल से बोल रहा हूं। आपके नाम पर गैरकानूनी पार्सल मिला है।",1,hi,authority_impersonation
+"आपके आधार कार्ड पर मनी लॉन्ड्रिंग का केस दर्ज हुआ है, आप डिजिटल अरेस्ट में हैं।",1,hi,authority_impersonation
+"सीबीआई की टीम आपके पते पर आ रही है, बचने के लिए तुरंत इस खाते में जुर्माना जमा करें।",1,hi,authority_impersonation
+"दूरसंचार विभाग: आपके नाम के सभी सिम कार्ड आज शाम को ब्लॉक कर दिए जाएंगे।",1,hi,authority_impersonation
+"तुरंत 20000 रुपये इस यूपीआई पर ट्रांसफर करें नहीं तो आपके खिलाफ गैर-जमानती वारंट जारी होगा।",1,hi,urgency_threat
+"आज रात 9 बजे आपकी बिजली काट दी जाएगी, बिल भरने के लिए तुरंत इस नंबर पर संपर्क करें।",1,hi,urgency_threat
+"बधाई हो! आपने 25 लाख की लॉटरी जीती है। राशि प्राप्त करने के लिए टैक्स शुल्क जमा करें।",1,hi,financial_fraud
+"कम ब्याज दर पर 5 लाख का लोन तुरंत प्राप्त करें, सिर्फ 1500 रुपये फाइल चार्ज दें।",1,hi,financial_fraud
+"Sir we need your card CVV to refund the excess amount charged on your bill.",1,en,credential_theft
+"Tax department refund of 45000 is pending. Submit OTP to claim your refund directly.",1,en,credential_theft
+"Your WhatsApp account will be deleted unless you verify the 6-digit code sent right now.",1,en,credential_theft
+"Colleague asking: can you share the team lunch menu for today?",0,en,benign
+"Let me know when the meeting recording is uploaded to drive.",0,en,benign
+"Aaj class cancel ho gayi hai professor ki tabiyat kharab thi.",0,hinglish,benign
+"Bhai zomato se order kar le 50 percent off mil raha hai.",0,hinglish,benign
+"कल सुबह 8 बजे ग्राउंड में रनिंग के लिए मिलते हैं।",0,hi,benign
+"क्या आपने आज का अखबार पढ़ा? बहुत अच्छी खबर आई है।",0,hi,benign
+"Your courier parcel containing international passports has been seized by customs.",1,en,authority_impersonation
+"Aapke PAN card pe 50 lakh ka illegal loan liya gaya hai, turant call pe raho.",1,hinglish,authority_impersonation
+"अदालत के आदेशानुसार आपके बैंक खाते सीज किए जा रहे हैं, तुरंत पेनल्टी भरें।",1,hi,urgency_threat

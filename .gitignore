@@ -17,17 +17,19 @@ env/
 .env.production
 
 # Datasets (fetched/generated locally — never commit, can be many GB)
-data/
-!data/.gitkeep
+/data/
 *.wav
-# ...but DO commit the demo-call audio so the demo is self-contained.
+# ...but DO commit the demo-call audio and intent benchmark
 !frontend/public/demo/*.wav
+!intelligence/data/intent_samples.csv
 
 # Model binary weights (keep threshold.json committed)
 *.pt
 *.bin
 *.safetensors
 *.onnx
+# ...but DO commit the trained MelCNN weights (3.2 MB) for self-contained evaluation
+!ai/models/best_mel_cnn.pt
 
 # Signing keys
 keys/

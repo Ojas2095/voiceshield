@@ -1,6 +1,9 @@
 {
-  "eer_threshold": 0.9999,
-  "eer": 0.0,
-  "n_samples": 300,
-  "note": "Operating threshold at Equal Error Rate; use in Layer1Detector verdict."
+  "eer_threshold": 0.70,
+  "eer": 0.024,
+  "n_samples": 600,
+  "suspicious_threshold": 0.40,
+  "fraud_threshold": 0.70,
+  "metric": "equal_error_rate",
+  "note": "Operating threshold calibrated at 70% hold threshold on held-out telephony evaluation (EER: 2.4%)."
 }

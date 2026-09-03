@@ -21,6 +21,8 @@ const config: Config = {
       colors: {
         canvas: c("--c-canvas"),
         surface: c("--c-surface"),
+        "surface-low": c("--c-surface-low"),
+        "surface-high": c("--c-surface-high"),
         line: c("--c-line"),
         navy: c("--c-navy"),
         ink: c("--c-ink"),
@@ -43,13 +45,18 @@ const config: Config = {
         "high-line": c("--c-high-line"),
       },
       fontFamily: {
-        sans: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "Arial", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "Segoe UI", "Roboto", "Arial", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
       },
-      boxShadow: {
-        card: "0 1px 2px rgba(15,37,64,0.04), 0 1px 3px rgba(15,37,64,0.06)",
+      fontSize: {
+        // Stitch scale — dense, engineered.
+        "label-caps": ["0.6875rem", { lineHeight: "0.875rem", letterSpacing: "0.06em", fontWeight: "700" }],
+        "data": ["0.75rem", { lineHeight: "1.125rem", letterSpacing: "-0.01em" }],
+        "data-sm": ["0.6875rem", { lineHeight: "1rem" }],
+        "body-sm": ["0.8125rem", { lineHeight: "1.25rem" }],
+        "metric": ["1.5rem", { lineHeight: "1.75rem", letterSpacing: "-0.03em", fontWeight: "600" }],
       },
-      borderRadius: { md: "6px", lg: "8px" },
+      borderRadius: { DEFAULT: "4px", sm: "2px", md: "4px", lg: "6px" },
     },
   },
   plugins: [],

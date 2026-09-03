@@ -2,77 +2,89 @@
 @tailwind components;
 @tailwind utilities;
 
-/* VoiceShield — fraud-monitoring console. Colour tokens as "R G B" triplets so
-   Tailwind's rgb(var(--x) / <alpha-value>) works and light/dark just swap vars. */
+/* VoiceShield — fraud-operations console (Stitch design language).
+   Colour tokens are "R G B" triplets so Tailwind's rgb(var(--x)/<alpha>) works
+   and light/dark just swap variables. Palette per the Stitch DESIGN spec:
+   clinical light canvas, navy structure, precision-blue actions, indigo
+   evidence, and a muted green/amber/red risk spectrum. */
 :root {
-  --c-canvas: 243 245 248;
-  --c-surface: 255 255 255;
-  --c-line: 227 231 238;
-  --c-navy: 15 37 64;
-  --c-ink: 31 42 55;
-  --c-muted: 107 117 128;
-  --c-brand: 37 99 168;
-  --c-brand-dark: 29 78 133;
-  --c-brand-soft: 234 241 249;
-  --c-evidence: 107 63 160;
-  --c-evidence-soft: 246 242 251;
-  --c-risk-low: 26 127 75;
-  --c-risk-med: 183 121 31;
-  --c-risk-high: 192 57 43;
-  --c-low-soft: 231 244 236;
-  --c-low-line: 191 227 205;
-  --c-med-soft: 251 243 226;
-  --c-med-line: 240 220 174;
-  --c-high-soft: 251 234 231;
-  --c-high-line: 240 195 187;
+  --c-canvas: 248 249 255;         /* app background            #F8F9FF */
+  --c-surface: 255 255 255;        /* panels (container-lowest) #FFFFFF */
+  --c-surface-low: 239 244 255;    /* container-low             #EFF4FF */
+  --c-surface-high: 220 233 255;   /* container-high            #DCE9FF */
+  --c-line: 214 219 229;           /* hairline borders          ~slate  */
+  --c-navy: 11 28 48;              /* headings / on-surface     #0B1C30 */
+  --c-ink: 31 42 55;               /* body text                 */
+  --c-muted: 90 98 112;            /* on-surface-variant        */
+  --c-brand: 37 99 235;            /* precision action          #2563EB */
+  --c-brand-dark: 29 78 216;
+  --c-brand-soft: 219 234 254;     /* focus ring / soft fill    #DBEAFE */
+  --c-evidence: 79 70 229;         /* forensic seal indigo      #4F46E5 */
+  --c-evidence-soft: 238 242 255;  /* #EEF2FF */
+  --c-risk-low: 22 163 74;         /* #16A34A */
+  --c-risk-med: 217 119 6;         /* #D97706 */
+  --c-risk-high: 220 38 38;        /* #DC2626 */
+  --c-low-soft: 240 253 244;  --c-low-line: 187 247 208;
+  --c-med-soft: 255 251 235;  --c-med-line: 253 230 138;
+  --c-high-soft: 254 242 242; --c-high-line: 254 202 202;
 }
 
 .dark {
-  --c-canvas: 14 20 27;
-  --c-surface: 22 29 38;
-  --c-line: 42 52 65;
-  --c-navy: 230 237 245;
-  --c-ink: 205 214 224;
+  --c-canvas: 13 18 25;
+  --c-surface: 21 27 36;
+  --c-surface-low: 27 35 47;
+  --c-surface-high: 36 47 62;
+  --c-line: 44 54 68;
+  --c-navy: 226 233 242;
+  --c-ink: 202 211 222;
   --c-muted: 138 149 163;
-  --c-brand: 84 152 220;
-  --c-brand-dark: 58 114 173;
-  --c-brand-soft: 22 40 60;
-  --c-evidence: 168 122 220;
-  --c-evidence-soft: 34 26 48;
+  --c-brand: 96 165 250;
+  --c-brand-dark: 59 130 246;
+  --c-brand-soft: 23 42 64;
+  --c-evidence: 165 180 252;
+  --c-evidence-soft: 32 30 54;
   --c-risk-low: 52 182 110;
   --c-risk-med: 217 154 58;
-  --c-risk-high: 232 96 80;
-  --c-low-soft: 18 40 28;
-  --c-low-line: 31 77 51;
-  --c-med-soft: 42 35 18;
-  --c-med-line: 92 74 31;
-  --c-high-soft: 42 21 18;
-  --c-high-line: 107 47 40;
+  --c-risk-high: 235 100 84;
+  --c-low-soft: 17 38 27;  --c-low-line: 30 74 49;
+  --c-med-soft: 40 33 17;  --c-med-line: 90 72 30;
+  --c-high-soft: 42 21 19; --c-high-line: 104 46 40;
 }
 
 html, body {
   background: rgb(var(--c-canvas));
   color: rgb(var(--c-ink));
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1;   /* tabular figures — no shift on live telemetry */
 }
 
+/* Uppercase micro-label (Stitch "label-caps"). */
 .eyebrow {
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: rgb(var(--c-muted));
+  line-height: 0.875rem;
 }
 
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* Monospace telemetry (Stitch "data-mono"). */
+.mono { font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
+/* Panel — white surface, hairline border, no diffuse shadow (Stitch depth rules). */
 .panel {
   background: rgb(var(--c-surface));
   border: 1px solid rgb(var(--c-line));
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(15, 37, 64, 0.04), 0 1px 3px rgba(15, 37, 64, 0.06);
+  border-radius: 4px;
 }
-.dark .panel { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
 
-:focus-visible { outline: 2px solid rgb(var(--c-brand)); outline-offset: 2px; }
+/* Panel header strip (Stitch forensic-card 28px header). */
+.panel-head {
+  background: rgb(var(--c-surface-low));
+  border-bottom: 1px solid rgb(var(--c-line));
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-line)); border-radius: 4px; }
+:focus-visible { outline: 2px solid rgb(var(--c-brand)); outline-offset: 1px; }

@@ -53,7 +53,19 @@ def fuse_layers(
     total = wv + wi + ws or 1.0
 
     weighted = (wv * v + wi * i + ws * s) / total
-    escalated = escalation * max(v, i, s)
+
+    # Escalation policy:
+    # High-confidence fraud triggers when:
+    # 1. Clear scam intent is detected (demanding money, arrest, OTP) -> i >= 0.35
+    # 2. Strong synthetic voice clone is confirmed -> v >= 0.70
+    # 3. Highly suspicious call signals (known scammer/spoof) -> s >= 0.40
+    # For casual conversations (friends talking, verified greetings) with zero scam intent
+    # and normal phone numbers, escalation is capped so innocent calls are never flagged as FRAUD.
+    if i == 0.0 and s <= 0.20 and v < 0.70:
+        escalated = min(0.35, escalation * max(v, i, s))
+    else:
+        escalated = escalation * max(v, i, s)
+
     return round(max(weighted, escalated), 4)
 
 

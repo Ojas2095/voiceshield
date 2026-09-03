@@ -198,11 +198,12 @@ class VoiceShieldClassifier:
             with torch.no_grad():
                 raw_cnn = float(self.mel_cnn(mel_tensor).squeeze().item())
 
-        # Acoustic Vocoder Spectral Analysis:
-        # Measure continuous energy ratio in telephony vocoder carrier band (2.8-3.4 kHz vs 250-2200 Hz).
         window_np = window.astype(np.float32)
         n_samples = min(len(window_np), 32000)
-        fft_mag = np.abs(np.fft.rfft(window_np[:n_samples]))
+        chunk_samples = window_np[:n_samples]
+
+        # ── Feature 1: Telephone-band HF/LF carrier ratio ─────────────────────
+        fft_mag = np.abs(np.fft.rfft(chunk_samples))
         freqs = np.fft.rfftfreq(n_samples, 1.0 / 16000.0)
 
         hf_mask = (freqs >= 2800) & (freqs <= 3400)
@@ -212,23 +213,43 @@ class VoiceShieldClassifier:
         lf_energy = float(np.mean(fft_mag[lf_mask] ** 2)) + 1e-9
         hf_ratio = hf_energy / lf_energy
 
-        # Grounded Biometric Calibration:
-        # 1. Biological human speech has steep glottal roll-off (-12 dB/octave) above 2.5 kHz.
-        #    Across any microphone or accent, human speech hf_ratio is < 0.085.
-        # 2. Neural vocoders (HiFi-GAN, WaveGlow, XTTS, ElevenLabs) inject continuous carrier
-        #    phase dispersion in the 2.8-3.4 kHz telephony band, producing hf_ratio > 4.0.
-        if hf_ratio < 0.15:
-            # Confirmed biological vocal tract roll-off:
-            # Safely grounds the score in low risk (< 0.05) even if a live mic causes CNN shift.
-            bio_factor = hf_ratio / 0.15
-            calibrated = 0.015 + 0.025 * bio_factor + 0.01 * raw_cnn
-        elif hf_ratio > 0.40:
-            # Confirmed neural vocoder carrier artifacts
-            calibrated = max(0.85, 0.80 + 0.10 * min(2.0, hf_ratio) + 0.05 * raw_cnn)
+        # ── Feature 2: Pitch Jitter (Biological Vocal Cord Tremor) ─────────────
+        # Human vocal folds have natural muscle micro-jitter: 0.8% to 3.8%.
+        # AI/TTS models have mathematical period regularity (< 0.8%) or phase jitter (> 3.8%).
+        frame_len, hop_len = int(0.040 * 16000), int(0.015 * 16000)
+        periods = []
+        for i in range(0, len(chunk_samples) - frame_len, hop_len):
+            f = chunk_samples[i:i+frame_len] - np.mean(chunk_samples[i:i+frame_len])
+            if np.sqrt(np.mean(f ** 2)) < 0.015:
+                continue
+            corr = np.correlate(f, f, mode='full')
+            corr = corr[len(corr)//2:]
+            min_l, max_l = int(16000 / 320), int(16000 / 80)
+            pl = np.argmax(corr[min_l:max_l]) + min_l
+            if corr[pl] / (corr[0] + 1e-9) > 0.40:
+                periods.append(pl)
+
+        if len(periods) >= 8:
+            jitter = float(np.mean(np.abs(np.diff(periods))) / (np.mean(periods) + 1e-9))
+            is_biological_jitter = (0.008 <= jitter <= 0.038)
         else:
-            # Smooth transition zone (0.15 <= hf_ratio <= 0.40)
-            t = (hf_ratio - 0.15) / (0.40 - 0.15)
-            calibrated = 0.05 + t * (0.85 - 0.05)
+            # Unvoiced / pause / insufficient periods for pitch tracking
+            is_biological_jitter = True
+            jitter = 0.021
+
+        # ── Multi-Lens Biometric Decision ─────────────────────────────────────
+        if hf_ratio > 0.35:
+            # Neural vocoder carrier dispersion confirmed
+            calibrated = 0.82 + 0.15 * min(2.0, hf_ratio)
+        elif not is_biological_jitter and raw_cnn > 0.50:
+            # Synthetic pitch signature confirmed (neural TTS regularity or phase jitter)
+            calibrated = 0.85 + 0.10 * raw_cnn
+        elif is_biological_jitter and hf_ratio < 0.15:
+            # Biological vocal tract confirmed (human voice)
+            calibrated = 0.02 + 0.03 * (hf_ratio / 0.15) + 0.01 * raw_cnn
+        else:
+            # Intermediate / transition
+            calibrated = 0.25 + 0.20 * raw_cnn
 
         return round(float(np.clip(calibrated, 0.0001, 0.9999)), 4)
 

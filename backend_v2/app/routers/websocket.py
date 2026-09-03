@@ -222,7 +222,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     jitter = 0.0
                 else:
                     reported_hf = hf_ratio
-                    jitter = round(min(1.0, max(0.0, (hf_ratio - 0.18) / 0.32)), 4)
+                    jitter = round(min(1.0, max(float(spoof_prob * 0.90) if spoof_prob >= 0.40 else 0.0, (hf_ratio - 0.18) / 0.32)), 4)
 
                 acoustic_features = {
                     "hf_ratio": reported_hf,

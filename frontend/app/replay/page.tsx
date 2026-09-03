@@ -25,10 +25,61 @@ interface Vector {
   keyTactics: string[];
   groundTruthText: string;
   acousticNote: string;
+  isExtended?: boolean;
 }
 
 const VECTORS: Vector[] = [
-  // ── 1. Legitimate Human Speech ─────────────────────────────────────────────
+  // ── ⚡ EXTENDED DURATION BENCHMARKS (68s - 95s) ──────────────────────────────
+  {
+    id: 'VS-LONG-02',
+    file: '/demo/cloned_long_scam.wav',
+    category: 'AI_CLONED',
+    title: 'Digital Arrest CBI Extortion (95s Extended)',
+    lang: 'English (Long)',
+    duration: '94.6s (1.5 min)',
+    durationSec: 94.6,
+    isExtended: true,
+    scenario: 'Full-length 1.5-minute AI cloned voice call executing multi-stage digital arrest coercion & UPI demands',
+    codec: '16 kHz Neural Vocoder',
+    speaker: 'AI Cloned Impersonator',
+    keyTactics: ['AI Deepfake Voice', 'Digital Arrest Impersonation', 'Magistrate Warrant Threat', 'UPI Escrow Demand'],
+    groundTruthText: 'Attention. This is Senior Inspector Vikram Rathore calling directly from the Central Cyber Crime and Telecommunications Investigation Cell in New Delhi. An urgent security alert has been registered under your national identity. A high priority courier parcel addressed to you was intercepted at the customs cargo terminal containing illegal contraband and unauthorized identity documents. A non-bailable arrest warrant has been formally issued by the magistrate under section 66F...',
+    acousticNote: 'Severe high-frequency vocoder dispersion (HF/LF > 2.0). Layer 1 + Layer 2 fusion triggers immediate automated Transaction Hold.',
+  },
+  {
+    id: 'VS-LONG-01',
+    file: '/demo/real_long_en.wav',
+    category: 'HUMAN_LEGITIMATE',
+    title: 'Colleague Project Planning Review (69s Extended)',
+    lang: 'English (Long)',
+    duration: '68.6s (1.1 min)',
+    durationSec: 68.6,
+    isExtended: true,
+    scenario: 'Extended genuine conversation between team members discussing presentation deck and lab logistics',
+    codec: '16 kHz PCM / Telephony',
+    speaker: 'Two Team Members (Interactive)',
+    keyTactics: ['Natural Dialogue', 'Colleague Banter', 'Zero Coercion'],
+    groundTruthText: 'Hello, good afternoon! Did you get a chance to review the presentation deck for our project review tomorrow morning? Yes, I went through the entire slide sequence. The architecture diagrams look very clear, especially the dual-surface integration and the evidence audit trail...',
+    acousticNote: 'Multi-speaker biological acoustics, natural conversational pauses, zero false positives across 134 continuous sliding windows.',
+  },
+  {
+    id: 'VS-LONG-03',
+    file: '/demo/human_scam_long_vishing.wav',
+    category: 'HUMAN_VISHING',
+    title: 'Telecom & Police Non-Bailable Arrest Vishing (75s Extended)',
+    lang: 'English (Long)',
+    duration: '74.6s (1.2 min)',
+    durationSec: 74.6,
+    isExtended: true,
+    scenario: 'Extended real human voice impersonating TRAI & Crime Branch threatening SIM cancellation & arrest bond',
+    codec: '16 kHz Telephony',
+    speaker: 'Impersonator (Biological Human)',
+    keyTactics: ['TRAI / Police Impersonation', 'Section 144 Arrest Threat', 'Escrow Bond Coercion', 'Asset Freeze Warning'],
+    groundTruthText: 'Attention. This is Senior Enforcement Officer Vikram Malhotra calling directly from the Central Telecom Regulatory Authority of India in conjunction with Delhi Police Cyber Crime Branch. We have placed your mobile number and national identity under immediate suspension review. Our carrier monitoring system indicates that unauthorized bulk transactions and banking OTP extortion attempts have originated from your registered IP address...',
+    acousticNote: 'Natural human vocal tract confirmed by Layer 1. Semantic NLP flags critical authority extortion, parcel contraband claim, and arrest threats.',
+  },
+
+  // ── 1. Legitimate Human Speech (Short) ──────────────────────────────────────
   {
     id: 'VS-HUM-01',
     file: '/demo/real_en.wav',
@@ -59,23 +110,8 @@ const VECTORS: Vector[] = [
     groundTruthText: 'नमस्ते, हमारे बैंक की स्थानीय शाखा कल सुबह दस बजे खुलेगी। क्या मैं आपकी कोई और सहायता कर सकता हूँ?',
     acousticNote: 'Natural biological Hindi vocal tract resonances. Healthy F1-F3 formant structure.',
   },
-  {
-    id: 'VS-HUM-03',
-    file: '/demo/real_long_en.wav',
-    category: 'HUMAN_LEGITIMATE',
-    title: 'Colleague Project Planning Review',
-    lang: 'English',
-    duration: '68.6s',
-    durationSec: 68.6,
-    scenario: 'Extended genuine dialogue between team members discussing slide decks and lab logistics',
-    codec: '16 kHz PCM / Telephony',
-    speaker: 'Two Team Members (Interactive)',
-    keyTactics: ['Natural Dialogue', 'Colleague Banter', 'Zero Coercion'],
-    groundTruthText: 'Hello, good afternoon! Did you get a chance to review the presentation deck for our project review tomorrow morning? Yes, I went through the entire slide sequence. The architecture diagrams look very clear, especially the dual-surface integration and the evidence audit trail...',
-    acousticNote: 'Multi-speaker biological acoustics, natural conversational pauses, zero false positives across 134 continuous sliding windows.',
-  },
 
-  // ── 2. Human Vishing Scams (Real Human Voice + Malicious Intent) ────────────
+  // ── 2. Human Vishing Scams (Short) ──────────────────────────────────────────
   {
     id: 'VS-VISH-01',
     file: '/demo/human_scam_sbi_otp.wav',
@@ -122,7 +158,7 @@ const VECTORS: Vector[] = [
     acousticNote: 'Layer 1 confirms natural human voice. Layer 2 flags critical authority extortion, parcel contraband claim, and arrest threats.',
   },
 
-  // ── 3. Synthetic AI Cloned Speech ──────────────────────────────────────────
+  // ── 3. Synthetic AI Cloned Speech (Short) ──────────────────────────────────
   {
     id: 'VS-CLONE-01',
     file: '/demo/cloned_en.wav',
@@ -153,27 +189,13 @@ const VECTORS: Vector[] = [
     groundTruthText: 'मैं एक गंभीर आपात स्थिति में हूँ, कृपया तुरंत इस खाते में बीस हज़ार रुपये भेज दीजिए।',
     acousticNote: 'Robotic spectral flatness and stepped F0 pitch contour characteristic of multi-speaker TTS.',
   },
-  {
-    id: 'VS-CLONE-03',
-    file: '/demo/cloned_long_scam.wav',
-    category: 'AI_CLONED',
-    title: 'Digital Arrest CBI Extortion Attack',
-    lang: 'English',
-    duration: '94.6s',
-    durationSec: 94.6,
-    scenario: 'Full-length 1.5-minute AI cloned call executing escalating CBI digital arrest coercion',
-    codec: '16 kHz Neural Vocoder',
-    speaker: 'AI Cloned Impersonator',
-    keyTactics: ['AI Deepfake Voice', 'Digital Arrest Impersonation', 'Warrant Threat', 'UPI Escrow Demand'],
-    groundTruthText: 'Attention. This is Senior Inspector Vikram Rathore calling directly from the Central Cyber Crime and Telecommunications Investigation Cell in New Delhi. An urgent security alert has been registered under your national identity. A high priority courier parcel addressed to you was intercepted at the customs cargo terminal containing illegal contraband and unauthorized identity documents. A non-bailable arrest warrant has been formally issued by the magistrate under section 66F...',
-    acousticNote: 'Severe high-frequency vocoder dispersion (HF/LF > 2.0). Layer 1 + Layer 2 fusion triggers immediate automated Transaction Hold.',
-  },
 ];
 
-type TabCategory = 'ALL' | 'HUMAN_LEGITIMATE' | 'HUMAN_VISHING' | 'AI_CLONED';
+type TabCategory = 'ALL' | 'EXTENDED' | 'HUMAN_LEGITIMATE' | 'HUMAN_VISHING' | 'AI_CLONED';
 
 export default function ReplayLab() {
   const vs = useVoiceShield();
+  // Set default selected vector to VS-LONG-02 (the 95s Digital Arrest clip)
   const [selectedVector, setSelectedVector] = useState<Vector>(VECTORS[0]);
   const [activeTab, setActiveTab] = useState<TabCategory>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -259,7 +281,12 @@ export default function ReplayLab() {
 
   // Filter vectors
   const filteredVectors = VECTORS.filter((v) => {
-    const matchesTab = activeTab === 'ALL' || v.category === activeTab;
+    const matchesTab =
+      activeTab === 'ALL'
+        ? true
+        : activeTab === 'EXTENDED'
+        ? v.isExtended
+        : v.category === activeTab;
     const matchesSearch =
       v.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -500,12 +527,20 @@ export default function ReplayLab() {
                 All ({VECTORS.length})
               </button>
               <button
+                onClick={() => setActiveTab('EXTENDED')}
+                className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors flex items-center gap-1 ${
+                  activeTab === 'EXTENDED' ? 'bg-cyan-600 text-white shadow' : 'text-cyan-400 hover:text-white'
+                }`}
+              >
+                ⚡ Extended (68s-95s) ({VECTORS.filter(v => v.isExtended).length})
+              </button>
+              <button
                 onClick={() => setActiveTab('HUMAN_LEGITIMATE')}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
                   activeTab === 'HUMAN_LEGITIMATE' ? 'bg-emerald-600 text-white shadow' : 'text-muted hover:text-emerald-400'
                 }`}
               >
-                <ShieldCheck className="w-3 h-3" /> Legitimate Human (3)
+                <ShieldCheck className="w-3 h-3" /> Legitimate Human (2)
               </button>
               <button
                 onClick={() => setActiveTab('HUMAN_VISHING')}
@@ -521,7 +556,7 @@ export default function ReplayLab() {
                   activeTab === 'AI_CLONED' ? 'bg-rose-600 text-white shadow' : 'text-muted hover:text-rose-400'
                 }`}
               >
-                <ShieldAlert className="w-3 h-3" /> AI Clones (3)
+                <ShieldAlert className="w-3 h-3" /> AI Clones (2)
               </button>
             </div>
           </div>
@@ -554,7 +589,14 @@ export default function ReplayLab() {
                       }`}
                     >
                       <td className="px-4 py-3 mono text-data text-brand font-semibold whitespace-nowrap">
-                        {v.id}
+                        <div className="flex items-center gap-1.5">
+                          <span>{v.id}</span>
+                          {v.isExtended && (
+                            <span className="mono text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+                              ⚡ {v.duration.split(' ')[0]}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {v.category === 'HUMAN_LEGITIMATE' && (

@@ -254,31 +254,42 @@ class VoiceShieldClassifier:
                 periods.append(pl)
 
         if len(periods) >= 8:
-            jitter = float(np.mean(np.abs(np.diff(periods))) / (np.mean(periods) + 1e-9))
-            is_biological_jitter = (0.008 <= jitter <= 0.038)
+            # Filter octave jumps and syllable transitions: only consecutive periods within 25% of each other
+            valid_diffs = []
+            for idx in range(len(periods) - 1):
+                d = abs(periods[idx + 1] - periods[idx])
+                if d / min(periods[idx], periods[idx + 1]) <= 0.25:
+                    valid_diffs.append(d)
+            if len(valid_diffs) >= 4:
+                jitter = float(np.mean(valid_diffs) / (np.mean(periods) + 1e-9))
+                is_biological_jitter = (0.008 <= jitter <= 0.038)
+            else:
+                jitter = float(np.mean(np.abs(np.diff(periods))) / (np.mean(periods) + 1e-9))
+                is_biological_jitter = (0.008 <= jitter <= 0.038)
         else:
             # Unvoiced / pause / insufficient periods for pitch tracking
             is_biological_jitter = True
             jitter = 0.021
 
         # ── Biometric Multi-Lens Continuous Decision ──────────────────────────
-        # Lens 1: Deep Learning CNN Spectrogram Inversion Artifacts
-        # When the neural network is confident (>= 0.70), it has detected vocoder artifacts
-        # (e.g. ChatGPT / ElevenLabs / Bark played through laptop or phone speakers).
-        if raw_cnn >= 0.70:
-            calibrated = 0.85 + 0.14 * min(1.0, (raw_cnn - 0.70) / 0.28)
-        # Lens 2: Vocoder Carrier Frequency Dispersion Artifacts (HiFi-GAN / Tacotron)
-        elif hf_ratio >= 1.50:
+        # Lens 1: Neural Vocoder Carrier Dispersion Artifacts (HiFi-GAN / Tacotron / ChatGPT / ElevenLabs)
+        if hf_ratio >= 1.50:
             calibrated = 0.85 + 0.14 * min(1.0, (hf_ratio - 1.50) / 5.0)
-        # Lens 3: Synthetic Pitch Rigidity or Phase Jitter combined with CNN evidence
-        elif (raw_cnn >= 0.45) and (not is_biological_jitter):
-            calibrated = 0.75 + 0.20 * raw_cnn
-        # Lens 4: Biological Human Vocal Tract (Micro-tremor + natural vocal tract resonance)
+        # Lens 2: Biological Human Vocal Tract Protection (Tremor confirmed + natural spectral rolloff)
+        elif is_biological_jitter and (hf_ratio < 0.40):
+            calibrated = 0.03 + 0.04 * (hf_ratio / 0.40) + 0.04 * min(0.50, raw_cnn)
+        # Lens 3: Low-frequency acoustic rolloff protection (Unvoiced syllables / word transitions)
+        elif hf_ratio < 0.25:
+            calibrated = 0.03 + 0.05 * (hf_ratio / 0.25) + 0.04 * min(1.0, raw_cnn)
+        # Lens 4: Synthetic pitch anomaly + CNN confirmation
+        elif (hf_ratio >= 0.40) and (raw_cnn >= 0.35 or not is_biological_jitter):
+            calibrated = 0.85 + 0.14 * max(raw_cnn, min(1.0, (hf_ratio - 0.40) / 1.50))
+        # Lens 5: Elevated HF with biological tremor (sibilants / mic acoustics)
         elif is_biological_jitter:
-            calibrated = 0.03 + 0.08 * min(1.0, hf_ratio / 1.50) + 0.08 * raw_cnn
-        # Lens 5: Unvoiced Consonants / Sibilance with low CNN (< 0.45)
+            calibrated = 0.08 + 0.15 * min(1.0, (hf_ratio - 0.40) / 1.50)
+        # Lens 6: Baseline fallback
         else:
-            calibrated = 0.05 + 0.25 * raw_cnn
+            calibrated = 0.05 + 0.15 * raw_cnn
 
         calibrated = float(np.clip(calibrated, 0.0001, 0.9999))
 

@@ -64,7 +64,15 @@ def extract_acoustic_features(chunk_samples: np.ndarray, sr: int = 16000) -> tup
             periods.append(pl)
 
     if len(periods) >= 8:
-        jitter = float(np.mean(np.abs(np.diff(periods))) / (np.mean(periods) + 1e-9))
+        valid_diffs = []
+        for idx in range(len(periods) - 1):
+            d = abs(periods[idx + 1] - periods[idx])
+            if d / min(periods[idx], periods[idx + 1]) <= 0.25:
+                valid_diffs.append(d)
+        if len(valid_diffs) >= 4:
+            jitter = float(np.mean(valid_diffs) / (np.mean(periods) + 1e-9))
+        else:
+            jitter = float(np.mean(np.abs(np.diff(periods))) / (np.mean(periods) + 1e-9))
     else:
         jitter = 0.021
 

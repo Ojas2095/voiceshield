@@ -217,7 +217,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
             asr_task = None
 
         buffered_samples = sum(len(c) for c in speech_buffer)
-        min_samples = 8000 if is_idle else 32000
+        min_samples = 24000 if is_idle else 32000
         if _INTELLIGENCE_AVAILABLE and transcriber and buffered_samples >= min_samples and (asr_task is None):
             max_samples = 128000
             accum_samples = 0

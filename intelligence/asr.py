@@ -87,12 +87,23 @@ class Transcriber:
             audio = np.asarray(audio, dtype="float32")
 
             if self._backend == "faster-whisper":
+                import re
                 kwargs = {"beam_size": 1}
                 if prompt and prompt.strip():
-                    kwargs["initial_prompt"] = prompt.strip()[-250:]
+                    clean_prompt = re.sub(r"[^\w\s\u0900-\u097F\u0600-\u06FF\.,\?!]", "", prompt.strip())
+                    if clean_prompt.strip():
+                        kwargs["initial_prompt"] = clean_prompt[-250:]
                 segments, info = self._model.transcribe(audio, **kwargs)
                 text = " ".join(seg.text for seg in segments).strip()
                 lang = getattr(info, "language", None)
+                # VoiceShield domain guard: Indian phone context (Hindi/English/Hinglish).
+                # If Whisper detects a non-Indian language with < 0.85 probability, fall back to Hindi ('hi').
+                indian_langs = ("en", "hi", "ur", "mr", "gu", "bn", "pa", "ta", "te", "kn", "ml")
+                if lang and (lang not in indian_langs) and (getattr(info, "language_probability", 1.0) < 0.85):
+                    kwargs["language"] = "hi"
+                    segments, info = self._model.transcribe(audio, **kwargs)
+                    text = " ".join(seg.text for seg in segments).strip()
+                    lang = "hi"
                 return {"text": text, "language": lang, "available": True}
 
             # openai-whisper

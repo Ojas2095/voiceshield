@@ -271,25 +271,21 @@ class VoiceShieldClassifier:
             is_biological_jitter = True
             jitter = 0.021
 
-        # ── Biometric Multi-Lens Continuous Decision ──────────────────────────
-        # Lens 1: Neural Vocoder Carrier Dispersion Artifacts (HiFi-GAN / Tacotron / ChatGPT / ElevenLabs)
-        if hf_ratio >= 1.50:
-            calibrated = 0.85 + 0.14 * min(1.0, (hf_ratio - 1.50) / 5.0)
-        # Lens 2: Biological Human Vocal Tract Protection (Tremor confirmed + natural spectral rolloff)
-        elif is_biological_jitter and (hf_ratio < 0.40):
-            calibrated = 0.03 + 0.04 * (hf_ratio / 0.40) + 0.04 * min(0.50, raw_cnn)
-        # Lens 3: Low-frequency acoustic rolloff protection (Unvoiced syllables / word transitions)
-        elif hf_ratio < 0.25:
-            calibrated = 0.03 + 0.05 * (hf_ratio / 0.25) + 0.04 * min(1.0, raw_cnn)
-        # Lens 4: Synthetic pitch anomaly + CNN confirmation
-        elif (hf_ratio >= 0.40) and (raw_cnn >= 0.35 or not is_biological_jitter):
-            calibrated = 0.85 + 0.14 * max(raw_cnn, min(1.0, (hf_ratio - 0.40) / 1.50))
-        # Lens 5: Elevated HF with biological tremor (sibilants / mic acoustics)
-        elif is_biological_jitter:
-            calibrated = 0.08 + 0.15 * min(1.0, (hf_ratio - 0.40) / 1.50)
-        # Lens 6: Baseline fallback
+        # ── Statistical Calibrated Scoring (Track 2) ──────────────────────────
+        feat_vec = np.array([hf_ratio, jitter, raw_cnn], dtype=np.float32)
+        if self.calibrator is not None:
+            calibrated = float(self.calibrator.predict_proba([feat_vec])[0, 1])
         else:
-            calibrated = 0.05 + 0.15 * raw_cnn
+            # Continuous mathematical sigmoid blend fallback
+            z = -4.23 + 4.17 * hf_ratio + 0.21 * jitter + 1.49 * raw_cnn
+            calibrated = 1.0 / (1.0 + np.exp(-z))
+
+        # Biological Vocal Tract Invariant Protection:
+        # Natural human vocal fold micro-tremor and deep glottal rolloff guard against noise spikes
+        if is_biological_jitter and (hf_ratio < 0.25):
+            calibrated = min(calibrated, 0.15)
+        elif hf_ratio >= 1.50:
+            calibrated = max(calibrated, 0.85)
 
         calibrated = float(np.clip(calibrated, 0.0001, 0.9999))
 

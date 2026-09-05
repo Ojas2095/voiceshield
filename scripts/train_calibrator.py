@@ -138,24 +138,33 @@ def main():
 
     X, y, class_tags = [], [], []
 
-    # 1. AI Synthetic Clones
-    ai_paths = list((REPO_ROOT / "frontend/public/demo").glob("cloned_*.wav"))
-    print(f"Processing {len(ai_paths)} AI clone audio files...")
+    # 1. AI Synthetic Clones & Neural Vocoders
+    ai_paths = (
+        list((REPO_ROOT / "frontend/public/demo").glob("cloned_*.wav")) +
+        sorted(list((REPO_ROOT / "data/fake").glob("*.wav")))[:60]
+    )
+    print(f"Processing {len(ai_paths)} AI clone and neural vocoder audio files...")
     for p in ai_paths:
-        feats = process_audio_file(p, clf)
-        for f in feats:
-            X.append(f)
-            y.append(1)
-            class_tags.append("ai_clone")
+        if p.exists():
+            feats = process_audio_file(p, clf)
+            for f in feats:
+                X.append(f)
+                y.append(1)
+                class_tags.append("ai_clone")
 
-    # 2. Real Human Speech (Clean & Telephony)
-    real_paths = (
+    # 2. Real Human Speech (Multi-Speaker: Indian English, Hindi, US Female, Telephony)
+    real_team_ksp = list((REPO_ROOT / "data/real").glob("real_team_ksp_*.wav"))
+    real_team_slt = list((REPO_ROOT / "data/real").glob("real_team_slt_*.wav"))
+    real_team_hindi = list((REPO_ROOT / "data/real").glob("real_team_hindi_*.wav"))
+    real_demo = (
         list((REPO_ROOT / "frontend/public/demo").glob("real_*.wav")) +
         list((REPO_ROOT / "frontend/public/demo").glob("human_scam_*.wav")) +
-        [REPO_ROOT / "test_voice.wav"] +
-        sorted(list((REPO_ROOT / "data/real").glob("*.wav")))[:40]
+        [REPO_ROOT / "test_voice.wav"]
     )
-    print(f"Processing {len(real_paths)} real human speech files...")
+    real_speech = sorted(list((REPO_ROOT / "data/real").glob("real_speech_*.wav")))[:30]
+
+    real_paths = real_team_ksp + real_team_slt + real_team_hindi + real_demo + real_speech
+    print(f"Processing {len(real_paths)} real human speech files across multiple speakers/dialects...")
     for p in real_paths:
         if p.exists():
             feats = process_audio_file(p, clf)

@@ -46,9 +46,11 @@ CATEGORIES: List[Category] = [
         r"\botp\b", r"one[\s-]*time[\s-]*password", r"\bpin\b", r"\bcvv\b",
         r"\bpassword\b", r"\bpasscode\b", r"card\s*number", r"expiry\s*date",
         r"\baadhaar?\b", r"\bpan\s*card\b", r"\bkyc\b", r"net\s*banking", r"debit\s*card",
-        r"credit\s*card", r"atm\s*card", r"bank\s*account", r"खाता", r"बैंक",
+        r"credit\s*card", r"atm\s*card", r"bank\s*account", r"खाता\s*(नंबर|संख्या)?",
+        r"बैंक\s*(खाता|डिटेल|विवरण|पासवर्ड)",
         r"otp\s*(batao|bata|do|share|send)", r"otp\s*नंबर", r"ओटीपी",
-        r"आधार", r"पिन\s*नंबर", r"सीवीवी", r"card\s*ki\s*detail",
+        r"आधार", r"पिन\s*(नंबर|बता|बताओ|डालो|दर्ज|शेयर)?", r"गुप्त\s*पिन", r"सीवीवी", r"card\s*ki\s*detail",
+        r"कार्ड\s*(नंबर|संख्या)", r"एटीएम\s*कार्ड",
         r"\b[4-6]\s*tp\b", r"o[\s.]*t[\s.]*p", r"\d+\s*digit\s*(otp|pin|code)",
         r"unauthorized\s*(debit|charge|transaction|access)", r"verification\s*code",
     ]),
@@ -75,13 +77,14 @@ CATEGORIES: List[Category] = [
         r"legal\s*action", r"last\s*warning", r"final\s*notice", r"do\s*not\s*(tell|inform|disconnect)",
         r"call\s*disconnect\s*mat", r"electricity\s*(connection\s*)?(will\s*be\s*)?disconnect",
         r"\b(bijli|bidhi)\b", r"disconnect(ion)?", r"बिजली", r"काट\s*दी\s*जाएगी",
+        r"कानूनी\s*कार्रवाई", r"kanuni\s*karwai",
         # Avoid standalone 'fine' which matches 'I am fine' or casual banter
         r"\b(pay|heavy|court|legal)\s*fine\b", r"\bfine\s*(lagao|dena|bharna|imposed)\b",
         r"penalty", r"raid", r"fir\b", r"पेनल्टी", r"जुर्माना",
         r"turant", r"jaldi", r"abhi\s*ke\s*abhi", r"block\s*(ho\s*jaye|fraudulent)",
         r"permanently\s*blocked", r"cancel\s*this\s*transaction", r"tatkal", r"bakaya",
         r"तुरंत", r"जल्दी", r"बंद\s*हो\s*जाएगा", r"kisi\s*ko\s*mat\s*bata",
-        r"دس[كک]ن[كک]شن", r"تتقال", r"کنیکشن",
+        r"دس[كک]ن[كک]शन", r"تتقال", r"کنیکشن",
     ]),
     Category("financial_request", 0.25, [
         r"send\s*money", r"pay\s*now", r"transfer\s*(the\s*)?money", r"upi\s*pin",
@@ -89,9 +92,11 @@ CATEGORIES: List[Category] = [
         r"processing\s*fee", r"refundable\s*deposit", r"clearance\s*charge",
         r"paisa\s*(bhej|transfer)", r"paise\s*bhej", r"amount\s*bhej", r"bhejo",
         r"पैसे?\s*भेज", r"transfer\s*kar(o|do|iye)", r"account\s*me\s*daal", r"जमा\s*करें",
+        r"ट्रांसफर", r"यूपीआई", r"गूगल\s*पे", r"फोन\s*पे", r"पेटीएम",
+        r"प्रोसेसिंग\s*फीस", r"रिफंडेबल", r"क्लियरेंस\s*फीस",
         r"jurmana", r"jamakare", r"rupaye", r"rupees",
     ]),
-    Category("lottery_prize", 0.30, [
+    Category("lottery_prize", 0.35, [
         r"you\s*have\s*won", r"\blottery\b", r"lucky\s*draw", r"prize\s*money",
         r"cash\s*prize", r"free\s*gift", r"reward\s*points\s*expir",
         r"pre-approved(\s*personal)?\s*loan", r"loan\s*pass", r"loan\s*of",
@@ -101,6 +106,7 @@ CATEGORIES: List[Category] = [
         r"anydesk", r"team\s*viewer", r"quick\s*support", r"screen\s*shar",
         r"install\s*(the\s*)?app", r"download\s*(the\s*)?app",
         r"app\s*install\s*kar", r"screen\s*dikha",
+        r"एनीडेस्क", r"टीमव्यूअर", r"ऐप\s*डाउनलोड", r"ऐप\s*इंस्टॉल",
     ]),
 ]
 
@@ -109,24 +115,27 @@ CASUAL_HUMOR_PATTERN = re.compile(
     r"\b(haha|hahaha|lol|lmao|rofl|so\s*funny|joke|joking|mazak|so\s*annoying|annoying)\b", re.IGNORECASE
 )
 PAST_ANECDOTE_PATTERN = re.compile(
-    r"\b(stopped\s*me\s*today|had\s*to\s*pay|yesterday|was\s*telling|told\s*me|happened\s*to|got\s*arrested|crazy\s*story|saw\s*on\s*(the\s*)?news|reading\s*about)\b", re.IGNORECASE
+    r"\b(stopped\s*me\s*today|had\s*to\s*pay|yesterday|was\s*telling|told\s*me|happened\s*to|got\s*arrested|crazy\s*story|saw\s*on\s*(the\s*)?news|reading\s*about|कल\b|kal\b|सिखा\s*रहे|बता\s*रहे|was\s*explaining|explain\s*kar\s*raha|bata\s*raha\s*tha)\b", re.IGNORECASE
 )
 BENIGN_TECH_PATTERN = re.compile(
-    r"\b(building\s*a\s*(model|system|project|app)|machine\s*learning|presentation\s*deck|project\s*review|researching)\b", re.IGNORECASE
+    r"\b(building\s*a\s*(model|system|project|app)|security\s*model|model\s*discuss|discuss(ing)?\s*(a\s*)?(model|project|system|security)|machine\s*learning|presentation\s*deck|project\s*review|researching|setting\s*explain|wallet\s*setting|how\s*to\s*use)\b", re.IGNORECASE
 )
 FAMILY_LOGIN_PATTERN = re.compile(
     r"\b(netflix|prime|hotstar|family\s*account|login\s*otp|did\s*you\s*get)\b", re.IGNORECASE
 )
 ALERT_SERVICE_PATTERN = re.compile(
-    r"\b(fraud\s*alert|security\s*advisory|never\s*share|do\s*not\s*share|don\'?t\s*share)\b", re.IGNORECASE
+    r"\b(fraud\s*alert|security\s*advisory|bank\s*advisory|advisory|guideline|security\s*guideline|सतर्कता(\s*संदेश)?|never\s*share|do\s*not\s*share|don\'?t\s*share|never\s*ask|never\s*type)\b", re.IGNORECASE
 )
 NEGATION_ADVISORY_PATTERN = re.compile(
-    r"(never|do\s*not|don\'?t|kisi\s*ko\s*mat|avoid)\s*(share|disclose|bata|give|tell|enter)?\s*(your|apna|the)?\s*(password|pin|otp|cvv|credentials)", re.IGNORECASE
+    r"(never|do\s*not|don\'?t|kisi\s*ko\s*mat|avoid|kabhi\s*bhi\s*nahi|mat)\s*(ask\s*you\s*to\s*)?(share|disclose|bata|give|tell|enter|send|transfer|type|input|dikha)?\s*(your|apna|the|koi\s*bhi)?\s*(bank\s*)?(credit\s*card\s*)?(password|pin|otp|cvv|credentials|money|paise)", re.IGNORECASE
+)
+NO_RUSH_PATTERN = re.compile(
+    r"\b(कोई\s*जल्दी\s*नहीं|koi\s*jaldi\s*nah?i[nm]?|no\s*hurry|no\s*rush|whenever\s*you\s*can|jab\s*fursat\s*mile)\b", re.IGNORECASE
 )
 
 # Active live demand markers that override casual guards if present
 ACTIVE_COERCION_MARKERS = re.compile(
-    r"\b(pay\s*now|transfer\s*(immediately|now)|under\s*digital\s*arrest|share\s*(the\s*)?otp|permanently\s*blocked)\b", re.IGNORECASE
+    r"\b(pay\s*now|transfer\s*(immediately|now)|under\s*digital\s*arrest|share\s*(the|your|this|that)?\s*(\d+[\s-]*digit\s*)?otp|permanently\s*blocked|right\s*now)\b", re.IGNORECASE
 )
 
 
@@ -170,8 +179,9 @@ def score_intent(transcript: str) -> Dict:
     )
     has_active_coercion = bool(ACTIVE_COERCION_MARKERS.search(raw))
 
-    # Mask defensive advisories (e.g. "Never share your password")
+    # Mask defensive advisories (e.g. "Never share your password") and explicit no-urgency phrases
     masked_text = NEGATION_ADVISORY_PATTERN.sub("advisory_warning_masked", text)
+    masked_text = NO_RUSH_PATTERN.sub("no_urgency_advisory", masked_text)
 
     fired: Dict[str, float] = {}
     matched: List[str] = []
@@ -202,6 +212,14 @@ def score_intent(transcript: str) -> Dict:
         for w in fired.values():
             prod *= (1.0 - w)
         intent_risk = round(1.0 - prod, 4)
+
+    # ── Triad Escalation Guard (Phase A.1) ──────────────────────────────────
+    # Routine billing notices combine Authority + Financial Request ("electricity bill is 500 rupees").
+    # A legitimate due-date reminder has no urgency marker; a scam threat does ("tonight", "immediately", "or else").
+    # Require urgency_threat as a specific third signal before authority_impersonation + financial_request
+    # can escalate past SUSPICIOUS into FRAUD (requires i >= 0.50).
+    if set(fired.keys()) == {"authority_impersonation", "financial_request"}:
+        intent_risk = min(0.35, intent_risk)
 
     top_category = max(fired, key=fired.get) if fired else None
 

@@ -250,7 +250,7 @@ def build_dataset(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build VoiceShield training dataset")
     parser.add_argument("--real_dir", type=str, required=True, help="Directory of real audio files")
-    parser.add_argument("--output_dir", type=str, default="./data", help="Output directory")
+    parser.add_argument("--output_dir", "--out", type=str, default="./data", help="Output directory")
     parser.add_argument("--num_fake", type=int, default=2, help="Fake samples per real sample")
     parser.add_argument("--no_xtts", action="store_true", help="Disable XTTS (gTTS only)")
     parser.add_argument("--lang", type=str, default="en",

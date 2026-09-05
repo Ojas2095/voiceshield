@@ -242,18 +242,21 @@ class VoiceShieldClassifier:
             "Acoustic metrics: hf_ratio=%.3f jitter=%.3f bio_jitter=%s raw_cnn=%.3f",
             hf_ratio, jitter, is_biological_jitter, raw_cnn,
         )
-        if hf_ratio > 0.35:
-            # Neural vocoder carrier dispersion confirmed
-            calibrated = 0.82 + 0.15 * min(2.0, hf_ratio)
-        elif not is_biological_jitter and raw_cnn > 0.50:
-            # Synthetic pitch signature confirmed (neural TTS regularity or phase jitter)
-            calibrated = 0.85 + 0.10 * raw_cnn
-        elif is_biological_jitter and hf_ratio < 0.15:
-            # Biological vocal tract confirmed (human voice)
-            calibrated = 0.02 + 0.03 * (hf_ratio / 0.15) + 0.01 * raw_cnn
+        if hf_ratio > 2.0:
+            # Neural vocoder carrier dispersion confirmed (HiFi-GAN/Tacotron artifact)
+            calibrated = 0.85 + 0.14 * min(1.0, (hf_ratio - 2.0) / 5.0)
+        elif not is_biological_jitter and (raw_cnn > 0.45 or hf_ratio > 0.60):
+            # Synthetic pitch signature confirmed (neural TTS mathematical regularity or phase jitter)
+            calibrated = 0.85 + 0.10 * max(raw_cnn, min(1.0, hf_ratio / 2.0))
+        elif is_biological_jitter and hf_ratio < 1.50:
+            # Biological vocal tract confirmed (human voice with natural micro-tremor)
+            calibrated = 0.02 + 0.05 * (hf_ratio / 1.50) + 0.03 * raw_cnn
+        elif is_biological_jitter:
+            # High-frequency content (e.g. sibilants / mic boost) but biological jitter confirmed
+            calibrated = 0.05 + 0.10 * min(1.0, hf_ratio / 2.0)
         else:
-            # Intermediate / transition
-            calibrated = 0.25 + 0.20 * raw_cnn
+            # Ambiguous / unvoiced transition
+            calibrated = 0.15 + 0.15 * raw_cnn
 
         return round(float(np.clip(calibrated, 0.0001, 0.9999)), 4)
 

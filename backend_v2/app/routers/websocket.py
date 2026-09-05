@@ -196,7 +196,7 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 verdict = to_verdict(fused_score)
 
                 # ── 3-Way Threat Classification ──────────────────────────────
-                voice_classification: Literal["HUMAN", "SYNTHETIC"] = "SYNTHETIC" if spoof_prob >= 0.40 else "HUMAN"
+                voice_classification: Literal["HUMAN", "SYNTHETIC"] = "SYNTHETIC" if spoof_prob >= 0.50 else "HUMAN"
                 if last_intent_risk >= 0.50:
                     scam_risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "HIGH"
                 elif last_intent_risk >= 0.25:

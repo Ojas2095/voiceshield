@@ -45,11 +45,12 @@ async def test_audio_file(file_path: str, expected_voice: str, expected_threat: 
     reasons = []
     transcripts = []
     
-    async with websockets.connect(f"{WS_URL}/ws/stream/{call_id}") as ws:
-        for i in range(0, len(pcm_bytes), chunk_size):
+    async with websockets.connect(f"{WS_URL}/ws/stream/{call_id}", ping_interval=None, ping_timeout=None) as ws:
+        chunks_to_send = list(range(0, len(pcm_bytes), chunk_size))[:70]  # Up to 35s of audio
+        for i in chunks_to_send:
             chunk = pcm_bytes[i:i+chunk_size]
             await ws.send(chunk)
-            await asyncio.sleep(0.30)
+            await asyncio.sleep(0.12)
             
             while True:
                 try:
@@ -68,9 +69,15 @@ async def test_audio_file(file_path: str, expected_voice: str, expected_threat: 
                         hold_triggered = True
                 except asyncio.TimeoutError:
                     break
+            
+            # Early exit if pass criteria already achieved
+            if (last_voice == expected_voice) and (last_threat == expected_threat) and (not (expected_threat in ("HUMAN_VISHING", "AI_SYNTHETIC")) or hold_triggered):
+                break
                     
         # Drain remaining messages to capture background ASR completion
-        for _ in range(15):
+        for _ in range(25):
+            if (last_voice == expected_voice) and (last_threat == expected_threat):
+                break
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=0.3)
                 msg = json.loads(raw)

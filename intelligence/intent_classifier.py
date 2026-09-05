@@ -54,14 +54,20 @@ CATEGORIES: List[Category] = [
     ]),
     Category("authority_impersonation", 0.40, [
         r"\bpolice\b", r"\bcbi\b", r"\bcustoms?\b", r"\bnarcotics\b", r"\bfedex\b",
-        r"\bcourt\b", r"\bwarrant\b", r"\barrest\b", r"digital\s*arrest", r"\bcourier\b",
+        r"\bcourt\b", r"\bwarrant\b", r"\barrest\b", r"digital\s*arrest",
+        # Courier only when accompanied by contraband/interception/police/seizure
+        r"courier\s*(parcel\s*)?(addressed|intercepted|seized|customs|contraband|illegal|police|arrest|drugs)",
+        r"(illegal|contraband|drugs)\s*courier",
         r"income\s*tax", r"cyber\s*cell", r"trai\b", r"enforcement\s*directorate",
         r"money\s*laundering", r"illegal\s*(drugs|parcel)", r"seized",
         r"giraftaar", r"गिरफ्तार", r"वारंट", r"अदालत", r"पुलिस", r"सीबीआई", r"दूरसंचार",
         r"main\s*(inspector|officer|dcp)\s*bol", r"thane\s*se\s*bol", r"customs\s*me",
-        r"state\s*bank", r"fraud\s*prevention", r"inspection\s*clearance", r"airport",
-        r"(bijli|vitran|witran|with\s*run|bajri|electricity)\s*(board|company|department|office|nigam)?",
-        r"with\s*run\s*company",
+        r"state\s*bank",
+        # Fraud prevention in official/calling context, not general academic discussion
+        r"(calling|officer|unit|department).*fraud\s*prevention", r"fraud\s*prevention\s*(unit|department|cell|team)",
+        r"inspection\s*clearance", r"airport",
+        r"(bijli|bijwi|vitran|vithran|witran|with\s*run|veteran|bajri|electricity)\s*(board|company|department|office|nigam)?",
+        r"(with\s*run|veteran|vithran)\s*company",
     ]),
     Category("urgency_threat", 0.35, [
         r"\bimmediately\b", r"\burgent(ly)?\b", r"right\s*now", r"within\s*\d+\s*(min|hour|ghante)",
@@ -69,7 +75,9 @@ CATEGORIES: List[Category] = [
         r"legal\s*action", r"last\s*warning", r"final\s*notice", r"do\s*not\s*(tell|inform|disconnect)",
         r"call\s*disconnect\s*mat", r"electricity\s*(connection\s*)?(will\s*be\s*)?disconnect",
         r"\b(bijli|bidhi)\b", r"disconnect(ion)?", r"बिजली", r"काट\s*दी\s*जाएगी",
-        r"fine", r"penalty", r"raid", r"fir\b", r"पेनल्टी", r"जुर्माना",
+        # Avoid standalone 'fine' which matches 'I am fine' or casual banter
+        r"\b(pay|heavy|court|legal)\s*fine\b", r"\bfine\s*(lagao|dena|bharna|imposed)\b",
+        r"penalty", r"raid", r"fir\b", r"पेनल्टी", r"जुर्माना",
         r"turant", r"jaldi", r"abhi\s*ke\s*abhi", r"block\s*(ho\s*jaye|fraudulent)",
         r"permanently\s*blocked", r"cancel\s*this\s*transaction", r"tatkal", r"bakaya",
         r"तुरंत", r"जल्दी", r"बंद\s*हो\s*जाएगा", r"kisi\s*ko\s*mat\s*bata",
@@ -96,9 +104,30 @@ CATEGORIES: List[Category] = [
     ]),
 ]
 
-# A short conversation with a single weak hit shouldn't read as 0.9.
-# We combine category weights multiplicatively (noisy-OR style) so multiple
-# independent scam signals compound, but one alone stays moderate.
+# ── Conversational & Negation Context Guards ─────────────────────────────────
+CASUAL_HUMOR_PATTERN = re.compile(
+    r"\b(haha|hahaha|lol|lmao|rofl|so\s*funny|joke|joking|mazak|so\s*annoying|annoying)\b", re.IGNORECASE
+)
+PAST_ANECDOTE_PATTERN = re.compile(
+    r"\b(stopped\s*me\s*today|had\s*to\s*pay|yesterday|was\s*telling|told\s*me|happened\s*to|got\s*arrested|crazy\s*story|saw\s*on\s*(the\s*)?news|reading\s*about)\b", re.IGNORECASE
+)
+BENIGN_TECH_PATTERN = re.compile(
+    r"\b(building\s*a\s*(model|system|project|app)|machine\s*learning|presentation\s*deck|project\s*review|researching)\b", re.IGNORECASE
+)
+FAMILY_LOGIN_PATTERN = re.compile(
+    r"\b(netflix|prime|hotstar|family\s*account|login\s*otp|did\s*you\s*get)\b", re.IGNORECASE
+)
+ALERT_SERVICE_PATTERN = re.compile(
+    r"\b(fraud\s*alert|security\s*advisory|never\s*share|do\s*not\s*share|don\'?t\s*share)\b", re.IGNORECASE
+)
+NEGATION_ADVISORY_PATTERN = re.compile(
+    r"(never|do\s*not|don\'?t|kisi\s*ko\s*mat|avoid)\s*(share|disclose|bata|give|tell|enter)?\s*(your|apna|the)?\s*(password|pin|otp|cvv|credentials)", re.IGNORECASE
+)
+
+# Active live demand markers that override casual guards if present
+ACTIVE_COERCION_MARKERS = re.compile(
+    r"\b(pay\s*now|transfer\s*(immediately|now)|under\s*digital\s*arrest|share\s*(the\s*)?otp|permanently\s*blocked)\b", re.IGNORECASE
+)
 
 
 def _normalize(text: str) -> str:
@@ -121,12 +150,28 @@ def score_intent(transcript: str) -> Dict:
           "categories": {name: fired_weight, ...},   # only categories that fired
           "matched": [ "category: phrase", ... ],     # evidence for the UI
           "top_category": str | None,
+          "num_categories": int,
         }
     """
     if not transcript or not transcript.strip():
-        return {"intent_risk": 0.0, "categories": {}, "matched": [], "top_category": None}
+        return {"intent_risk": 0.0, "categories": {}, "matched": [], "top_category": None, "num_categories": 0}
 
+    raw = transcript
     text = _normalize(transcript)
+
+    is_casual_or_past = (
+        bool(CASUAL_HUMOR_PATTERN.search(raw)) or
+        bool(PAST_ANECDOTE_PATTERN.search(raw))
+    )
+    is_benign_discussion = (
+        bool(BENIGN_TECH_PATTERN.search(raw)) or
+        bool(FAMILY_LOGIN_PATTERN.search(raw)) or
+        bool(ALERT_SERVICE_PATTERN.search(raw))
+    )
+    has_active_coercion = bool(ACTIVE_COERCION_MARKERS.search(raw))
+
+    # Mask defensive advisories (e.g. "Never share your password")
+    masked_text = NEGATION_ADVISORY_PATTERN.sub("advisory_warning_masked", text)
 
     fired: Dict[str, float] = {}
     matched: List[str] = []
@@ -134,19 +179,29 @@ def score_intent(transcript: str) -> Dict:
     for cat in CATEGORIES:
         hit = False
         for pat in cat.patterns:
-            m = re.search(pat, text)
+            m = re.search(pat, masked_text)
             if m:
+                # If conversational context or benign tech/family discussion exists without active extortion
+                if (is_casual_or_past or is_benign_discussion) and not has_active_coercion:
+                    continue
                 hit = True
                 matched.append(f"{cat.name}: '{m.group(0)}'")
         if hit:
             fired[cat.name] = cat.weight
 
-    # Noisy-OR fusion: risk = 1 - Π(1 - weight) over fired categories.
-    # One category → its weight; several → compounds toward 1.0.
-    prod = 1.0
-    for w in fired.values():
-        prod *= (1.0 - w)
-    intent_risk = round(1.0 - prod, 4)
+    # Multi-category compounding rule:
+    # A single isolated category cannot exceed 0.35 risk.
+    # Real scams combine >= 2 distinct categories (e.g. authority + urgency, credential + threat).
+    if len(fired) == 0:
+        intent_risk = 0.0
+    elif len(fired) == 1 and not has_active_coercion:
+        only_cat = list(fired.keys())[0]
+        intent_risk = min(0.35, fired[only_cat])
+    else:
+        prod = 1.0
+        for w in fired.values():
+            prod *= (1.0 - w)
+        intent_risk = round(1.0 - prod, 4)
 
     top_category = max(fired, key=fired.get) if fired else None
 
@@ -155,6 +210,7 @@ def score_intent(transcript: str) -> Dict:
         "categories": fired,
         "matched": matched,
         "top_category": top_category,
+        "num_categories": len(fired),
     }
 
 

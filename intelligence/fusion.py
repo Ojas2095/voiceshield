@@ -56,15 +56,15 @@ def fuse_layers(
 
     # Escalation policy:
     # High-confidence fraud triggers when:
-    # 1. Clear scam intent is detected (demanding money, arrest, OTP) -> i >= 0.35
+    # 1. Clear scam intent is confirmed by compounding categories -> i >= 0.50
     # 2. Strong synthetic voice clone is confirmed -> v >= 0.70
     # 3. Highly suspicious call signals (known scammer/spoof) -> s >= 0.40
     # For casual conversations (friends talking, verified greetings) with zero scam intent
     # and normal phone numbers, escalation is capped so innocent calls are never flagged as FRAUD.
     if i == 0.0 and s <= 0.20 and v < 0.70:
         escalated = min(0.35, escalation * max(v, i, s))
-    elif i >= 0.35:
-        # Scam intent confirmed (OTP phishing, digital arrest, authority extortion)
+    elif i >= 0.50:
+        # Multi-category scam intent confirmed (authority + coercion, credential + threat)
         # Directly escalates to FRAUD so human scammers trigger transaction holds
         escalated = max(0.72, min(0.95, i * 1.25))
     else:

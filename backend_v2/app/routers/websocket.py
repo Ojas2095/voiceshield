@@ -40,7 +40,7 @@ from app.vad import VADPipeline
 
 # ── Intelligence layers (lazy-import friendly) ────────────────────────────────
 try:
-    from intelligence.asr import Transcriber
+    from intelligence.asr import Transcriber, get_transcriber
     from intelligence.call_signals import score_call_signals
     from intelligence.intent_classifier import score_intent
     from intelligence.fusion import fuse_layers
@@ -59,8 +59,8 @@ settings = get_settings()
 
 router = APIRouter(tags=["websocket"])
 
-# Run ASR + intent every N speech-active windows (~2s each → every ~10s of speech)
-_ASR_INTERVAL = 5
+# Trigger background ASR after N speech-active windows (~2-3s of active speech)
+_ASR_INTERVAL = 3
 
 
 @router.websocket("/ws/stream/{call_id}")
@@ -77,9 +77,10 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
     hold_already_triggered = False
 
     # Layer 2/3 state
-    transcriber = Transcriber() if _INTELLIGENCE_AVAILABLE else None
-    speech_window_count = 0          # counts speech-active windows since last ASR run
+    transcriber = get_transcriber() if _INTELLIGENCE_AVAILABLE else None
+    speech_window_count = 0          # counts speech-active windows
     speech_buffer: list[np.ndarray] = []  # accumulate audio for ASR
+    asr_task: Any = None
     last_intent_risk: float = 0.0
     last_signal_risk: float = 0.0
     last_language: str = "unknown"
@@ -138,26 +139,39 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 spoof_prob = await classifier.infer(window)
                 speech_window_count += 1
 
-                # Accumulate audio for periodic ASR (keep last 30s worth)
-                speech_buffer.append(window)
-                if len(speech_buffer) > 15:
-                    speech_buffer.pop(0)
+                # Accumulate non-overlapping audio for ASR (0.5s stride = 8000 samples)
+                speech_buffer.append(window[-8000:])
 
-                # ── Layer 2 + 3: Every ASR_INTERVAL speech windows ───────────
-                if _INTELLIGENCE_AVAILABLE and speech_window_count % _ASR_INTERVAL == 0 and speech_buffer:
+                # ── Layer 2 + 3: Background non-blocking ASR ─────────────────
+                if asr_task is not None and asr_task.done():
+                    try:
+                        intent_result, signal_result, language, transcript = asr_task.result()
+                        last_intent_risk = float(intent_result.get("intent_risk", 0.0))
+                        last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
+                        last_language = language or "unknown"
+                        if transcript and transcript.strip():
+                            accumulated_transcript = (accumulated_transcript + " " + transcript.strip()).strip()
+
+                        # Merge matched reasons from both layers
+                        intent_matches = intent_result.get("matched", [])
+                        signal_reasons = signal_result.get("reasons", [])
+                        last_matched_reasons = (intent_matches + signal_reasons)[:6]
+                        logger.info("ASR finished: intent=%.4f transcript='%s' matched=%s", last_intent_risk, transcript, intent_matches)
+                    except Exception as exc:
+                        logger.warning("Background ASR task failed: %s", exc)
+                    asr_task = None
+
+                # Trigger ASR when at least 4 chunks (2.0s of speech) are queued and no ASR is in flight
+                if _INTELLIGENCE_AVAILABLE and transcriber and len(speech_buffer) >= 4 and (asr_task is None):
                     asr_audio = np.concatenate(speech_buffer)
-                    # Clear buffer after ASR to prevent overlapping transcript evaluations
                     speech_buffer.clear()
-
-                    # Build call metadata for Layer 3 (call signals)
                     call_metadata = {
                         "call_id": str(call_id),
                         "duration_s": end_ms / 1000.0,
                         "speech_windows": speech_window_count,
                         "current_risk": spoof_prob,
                     }
-
-                    intent_result, signal_result, language, transcript = await loop.run_in_executor(
+                    asr_task = loop.run_in_executor(
                         inf._executor,
                         _run_intelligence_sync,
                         asr_audio,
@@ -165,16 +179,6 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                         call_metadata,
                         accumulated_transcript,
                     )
-                    last_intent_risk = float(intent_result.get("intent_risk", 0.0))
-                    last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
-                    last_language = language or "unknown"
-                    if transcript and transcript.strip():
-                        accumulated_transcript = (accumulated_transcript + " " + transcript.strip()).strip()
-
-                    # Merge matched reasons from both layers
-                    intent_matches = intent_result.get("matched", [])
-                    signal_reasons = signal_result.get("reasons", [])
-                    last_matched_reasons = (intent_matches + signal_reasons)[:6]  # cap for UI
 
                 # ── Full 3-layer fusion ──────────────────────────────────────
                 if _INTELLIGENCE_AVAILABLE:
@@ -291,6 +295,11 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
         except Exception:
             pass
     finally:
+        if asr_task is not None and not asr_task.done():
+            try:
+                await asyncio.wait_for(asr_task, timeout=2.0)
+            except Exception:
+                pass
         logger.info("WS handler exiting for call_id=%s", call_id)
 
 

@@ -46,9 +46,11 @@ CATEGORIES: List[Category] = [
         r"\botp\b", r"one[\s-]*time[\s-]*password", r"\bpin\b", r"\bcvv\b",
         r"\bpassword\b", r"\bpasscode\b", r"card\s*number", r"expiry\s*date",
         r"\baadhaar?\b", r"\bpan\s*card\b", r"\bkyc\b", r"net\s*banking", r"debit\s*card",
-        r"atm\s*card", r"bank\s*account", r"खाता", r"बैंक",
+        r"credit\s*card", r"atm\s*card", r"bank\s*account", r"खाता", r"बैंक",
         r"otp\s*(batao|bata|do|share|send)", r"otp\s*नंबर", r"ओटीपी",
         r"आधार", r"पिन\s*नंबर", r"सीवीवी", r"card\s*ki\s*detail",
+        r"\b[4-6]\s*tp\b", r"o[\s.]*t[\s.]*p", r"\d+\s*digit\s*(otp|pin|code)",
+        r"unauthorized\s*(debit|charge|transaction|access)", r"verification\s*code",
     ]),
     Category("authority_impersonation", 0.40, [
         r"\bpolice\b", r"\bcbi\b", r"\bcustoms?\b", r"\bnarcotics\b", r"\bfedex\b",
@@ -57,23 +59,29 @@ CATEGORIES: List[Category] = [
         r"money\s*laundering", r"illegal\s*(drugs|parcel)", r"seized",
         r"giraftaar", r"गिरफ्तार", r"वारंट", r"अदालत", r"पुलिस", r"सीबीआई", r"दूरसंचार",
         r"main\s*(inspector|officer|dcp)\s*bol", r"thane\s*se\s*bol", r"customs\s*me",
+        r"state\s*bank", r"fraud\s*prevention", r"inspection\s*clearance", r"airport",
+        r"(bijli|vitran|witran|with\s*run|bajri|electricity)\s*(board|company|department|office|nigam)?",
+        r"with\s*run\s*company",
     ]),
     Category("urgency_threat", 0.35, [
         r"\bimmediately\b", r"\burgent(ly)?\b", r"right\s*now", r"within\s*\d+\s*(min|hour|ghante)",
         r"account\s*(is\s*)?(blocked|suspended|frozen|deactivat|freeze|seize)",
         r"legal\s*action", r"last\s*warning", r"final\s*notice", r"do\s*not\s*(tell|inform|disconnect)",
         r"call\s*disconnect\s*mat", r"electricity\s*(connection\s*)?(will\s*be\s*)?disconnect",
-        r"bijli\s*(ka\s*connection)?", r"बिजली", r"काट\s*दी\s*जाएगी",
+        r"\b(bijli|bidhi)\b", r"disconnect(ion)?", r"बिजली", r"काट\s*दी\s*जाएगी",
         r"fine", r"penalty", r"raid", r"fir\b", r"पेनल्टी", r"जुर्माना",
-        r"turant", r"jaldi", r"abhi\s*ke\s*abhi", r"block\s*ho\s*jaye",
+        r"turant", r"jaldi", r"abhi\s*ke\s*abhi", r"block\s*(ho\s*jaye|fraudulent)",
+        r"permanently\s*blocked", r"cancel\s*this\s*transaction", r"tatkal", r"bakaya",
         r"तुरंत", r"जल्दी", r"बंद\s*हो\s*जाएगा", r"kisi\s*ko\s*mat\s*bata",
+        r"دس[كک]ن[كک]شن", r"تتقال", r"کنیکشن",
     ]),
-    Category("financial_request", 0.36, [
-        r"transfer\s*(the\s*)?(money|funds|amount|rupees|\d+)", r"send\s*money", r"\bupi\b",
-        r"google\s*pay|gpay|phonepe|paytm", r"scan\s*(the\s*)?qr", r"\brefund\b",
-        r"processing\s*fee", r"security\s*deposit", r"pay\s*(the\s*)?(fee|fine|bill|tax)",
+    Category("financial_request", 0.25, [
+        r"send\s*money", r"pay\s*now", r"transfer\s*(the\s*)?money", r"upi\s*pin",
+        r"google\s*pay", r"phone\s*pe", r"paytm", r"scanner", r"qr\s*code",
+        r"processing\s*fee", r"refundable\s*deposit", r"clearance\s*charge",
         r"paisa\s*(bhej|transfer)", r"paise\s*bhej", r"amount\s*bhej", r"bhejo",
         r"पैसे?\s*भेज", r"transfer\s*kar(o|do|iye)", r"account\s*me\s*daal", r"जमा\s*करें",
+        r"jurmana", r"jamakare", r"rupaye", r"rupees",
     ]),
     Category("lottery_prize", 0.30, [
         r"you\s*have\s*won", r"\blottery\b", r"lucky\s*draw", r"prize\s*money",
@@ -95,6 +103,10 @@ CATEGORIES: List[Category] = [
 
 def _normalize(text: str) -> str:
     text = text.lower()
+    # Strip Arabic / Urdu diacritics (harakat / tashkeel)
+    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
+    # Replace punctuation with space so chunk boundaries and sentence ends do not break multi-word regexes
+    text = re.sub(r"[\.,\-\?!;:\'\"\/\\(\)\[\]]", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 

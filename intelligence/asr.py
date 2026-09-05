@@ -29,7 +29,7 @@ logger = logging.getLogger("voiceshield.asr")
 class Transcriber:
     """Lazy Whisper wrapper with a graceful no-op fallback."""
 
-    def __init__(self, model_size: str = "small", device: str = "cpu", compute_type: str = "int8"):
+    def __init__(self, model_size: str = "base", device: str = "cpu", compute_type: str = "int8"):
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
@@ -120,12 +120,23 @@ class Transcriber:
             return {"text": "", "language": None, "available": True}
 
 
-# Module-level singleton (loaded lazily on first transcribe call)
-global_transcriber = Transcriber()
+_GLOBAL_TRANSCRIBER: Optional[Transcriber] = None
+
+
+def get_transcriber(model_size: str = "base", device: str = "cpu", compute_type: str = "int8") -> Transcriber:
+    """Returns the shared process-wide Whisper Transcriber instance."""
+    global _GLOBAL_TRANSCRIBER
+    if _GLOBAL_TRANSCRIBER is None:
+        _GLOBAL_TRANSCRIBER = Transcriber(model_size=model_size, device=device, compute_type=compute_type)
+    return _GLOBAL_TRANSCRIBER
+
+
+# Module-level singleton
+global_transcriber = get_transcriber()
 
 
 if __name__ == "__main__":
     # Interface smoke test — works even with no Whisper installed.
-    t = Transcriber()
+    t = get_transcriber()
     print("ASR available:", t.available)
     print(t.transcribe_array([0.0] * 16000, sample_rate=16000))

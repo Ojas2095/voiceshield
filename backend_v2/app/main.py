@@ -47,6 +47,15 @@ async def lifespan(application: FastAPI):
         type(inf.classifier).__name__,
         getattr(inf.classifier, "device", "cpu"),
     )
+
+    try:
+        from intelligence.asr import get_transcriber
+        transcriber = get_transcriber()
+        if transcriber.available:
+            logger.info("ASR Transcriber warmed up and ready (%s, %s)", transcriber.model_size, transcriber.device)
+    except Exception as e:
+        logger.warning("ASR Transcriber warmup skipped: %s", e)
+
     yield
     logger.info("=== VoiceShield shutting down ===")
 

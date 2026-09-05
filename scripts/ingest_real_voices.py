@@ -119,9 +119,10 @@ def process_and_ingest(file_path: Path) -> bool:
     ]
     jitter = float(np.mean(valid_diffs) / (np.mean(periods) + 1e-9)) if len(valid_diffs) >= 4 else 0.021
 
-    # Target filename
+    # Target filename (include parent folder if speaker/subdir exists to prevent collisions)
     clean_stem = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in file_path.stem)
-    out_name = f"real_team_{clean_stem}.wav"
+    parent_prefix = f"{file_path.parent.name}_" if file_path.parent.name and file_path.parent.name not in ("real", "data") else ""
+    out_name = f"real_team_{parent_prefix}{clean_stem}.wav"
     out_path = REAL_DIR / out_name
 
     # Save as 16kHz 16-bit PCM WAV

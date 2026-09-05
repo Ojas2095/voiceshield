@@ -261,34 +261,38 @@ class VoiceShieldClassifier:
             is_biological_jitter = True
             jitter = 0.021
 
-        # ── Multi-Feature Continuous Confidence Blending (Track 1) ───────────
-        def _sigmoid(x: float, center: float, steepness: float) -> float:
-            return 1.0 / (1.0 + float(np.exp(-steepness * (x - center))))
+        # ── Biometric Multi-Lens Continuous Decision ──────────────────────────
+        # Lens 1: Deep Learning CNN Spectrogram Inversion Artifacts
+        # When the neural network is confident (>= 0.70), it has detected vocoder artifacts
+        # (e.g. ChatGPT / ElevenLabs / Bark played through laptop or phone speakers).
+        if raw_cnn >= 0.70:
+            calibrated = 0.85 + 0.14 * min(1.0, (raw_cnn - 0.70) / 0.28)
+        # Lens 2: Vocoder Carrier Frequency Dispersion Artifacts (HiFi-GAN / Tacotron)
+        elif hf_ratio >= 1.50:
+            calibrated = 0.85 + 0.14 * min(1.0, (hf_ratio - 1.50) / 5.0)
+        # Lens 3: Synthetic Pitch Rigidity or Phase Jitter combined with CNN evidence
+        elif (raw_cnn >= 0.45) and (not is_biological_jitter):
+            calibrated = 0.75 + 0.20 * raw_cnn
+        # Lens 4: Biological Human Vocal Tract (Micro-tremor + natural vocal tract resonance)
+        elif is_biological_jitter:
+            calibrated = 0.03 + 0.08 * min(1.0, hf_ratio / 1.50) + 0.08 * raw_cnn
+        # Lens 5: Unvoiced Consonants / Sibilance with low CNN (< 0.45)
+        else:
+            calibrated = 0.05 + 0.25 * raw_cnn
 
-        hf_vote = _sigmoid(hf_ratio, center=0.40, steepness=10.0)
-        jitter_center_distance = min(
-            abs(jitter - 0.008), abs(jitter - 0.038)
-        ) if not (0.008 <= jitter <= 0.038) else 0.0
-        jitter_vote = _sigmoid(jitter_center_distance, center=0.010, steepness=80.0)
-        cnn_vote = raw_cnn
-        continuous_blend = 0.45 * hf_vote + 0.30 * jitter_vote + 0.25 * cnn_vote
+        calibrated = float(np.clip(calibrated, 0.0001, 0.9999))
 
-        # ── Statistical Calibrator & OOD Detection (Track 2) ──────────────────
+        # ── OOD Telemetry ────────────────────────────────────────────────────
         is_low_confidence = False
         ood_dist = 0.0
-        if self.calibrator is not None and self.mean_vec is not None and self.cov_inv is not None:
+        if self.mean_vec is not None and self.cov_inv is not None:
             try:
                 from scipy.spatial.distance import mahalanobis
                 feat_vec = np.array([hf_ratio, jitter, raw_cnn], dtype=np.float32)
-                p_calibrated = float(self.calibrator.predict_proba([feat_vec])[0, 1])
                 ood_dist = float(mahalanobis(feat_vec, self.mean_vec, self.cov_inv))
                 is_low_confidence = bool(ood_dist > self.ood_threshold)
-                calibrated = 0.60 * p_calibrated + 0.40 * continuous_blend
-            except Exception as exc:
-                logger.warning("Statistical calibrator error, using continuous blend: %s", exc)
-                calibrated = continuous_blend
-        else:
-            calibrated = continuous_blend
+            except Exception:
+                pass
 
         self.last_telemetry = {
             "is_low_confidence": 1.0 if is_low_confidence else 0.0,
@@ -300,7 +304,7 @@ class VoiceShieldClassifier:
             hf_ratio, jitter, raw_cnn, calibrated, ood_dist, is_low_confidence,
         )
 
-        return round(float(np.clip(calibrated, 0.0001, 0.9999)), 4)
+        return round(calibrated, 4)
 
     async def infer(self, window: np.ndarray) -> float:
         loop = asyncio.get_running_loop()

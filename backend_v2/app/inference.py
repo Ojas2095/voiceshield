@@ -238,6 +238,10 @@ class VoiceShieldClassifier:
             jitter = 0.021
 
         # ── Multi-Lens Biometric Decision ─────────────────────────────────────
+        logger.info(
+            "Acoustic metrics: hf_ratio=%.3f jitter=%.3f bio_jitter=%s raw_cnn=%.3f",
+            hf_ratio, jitter, is_biological_jitter, raw_cnn,
+        )
         if hf_ratio > 0.35:
             # Neural vocoder carrier dispersion confirmed
             calibrated = 0.82 + 0.15 * min(2.0, hf_ratio)

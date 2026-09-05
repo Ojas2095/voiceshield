@@ -56,11 +56,19 @@ India lost over **₹1,750 Crore in 2024–2025** to sophisticated cyber-extorti
                                           │
                   ┌───────────────────────┼───────────────────────┐
                   ▼                       ▼                       ▼
-            [ Score < 0.40 ]      [ 0.40 ≤ Score < 0.70 ]   [ Score ≥ 0.70 ]
-               🟢 REAL                 🟡 SUSPICIOUS           🔴 FRAUD
+             [ Score < 0.40 ]      [ 0.40 ≤ Score < 0.70 ]   [ Score ≥ 0.70 ]
+                🟢 REAL                 🟡 SUSPICIOUS           🔴 FRAUD
            Call Continues             Warning Overlay       Auto-Hold Trigger
                                       Alert to User         SHA-256 Merkle Log
 ```
+
+### 💡 Core Design Principle: Why Separate Models (Layer 1 vs Layer 2)?
+
+> **Voice authenticity (Layer 1) and scam intent (Layer 2) are orthogonal signals.**
+> * **Layer 1 is Acoustic (how the audio was produced):** Evaluates physical vocal cord biomechanics, micro-jitter pitch stability, and neural vocoder dispersion artifacts to determine whether sound originated from a biological human or an AI synthesis engine.
+> * **Layer 2 is Semantic (what is being said):** Evaluates conversational intent across multilingual English, Hindi, and Hinglish to detect social engineering coercion, authority impersonation, and credential harvesting.
+> 
+> A single model conflating them would either need to solve full language understanding redundantly inside an audio classifier, or lose the ability to catch real-human vishing (Layer 1 alone would score a genuine human scammer's biological voice as "authentic" and miss the fraud entirely). By decoupling them and fusing them via weighted risk escalation, VoiceShield cleanly catches both **AI-generated deepfakes** and **real human vishing calls** while leaving legitimate conversations completely undisturbed.
 
 ---
 

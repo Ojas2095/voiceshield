@@ -169,6 +169,30 @@ class VoiceShieldClassifier:
                 logger.warning("No trained weights in %s — scores are unreliable.", models_dir)
             self.mel_cnn.eval()
 
+        # ── Statistical Calibrator & OOD Detection (Track 2) ──────────────────
+        self.calibrator = None
+        self.mean_vec = None
+        self.cov_inv = None
+        self.ood_threshold = 2.95
+        self.last_telemetry = {"is_low_confidence": 0.0, "ood_distance": 0.0}
+        cal_path = models_dir / "calibrator.joblib"
+        if cal_path.exists():
+            try:
+                import joblib
+                bundle = joblib.load(str(cal_path))
+                self.calibrator = bundle.get("model")
+                self.mean_vec = bundle.get("mean_vec")
+                self.cov_inv = bundle.get("cov_inv")
+                self.ood_threshold = float(bundle.get("ood_threshold", 2.95))
+                logger.info(
+                    "Loaded statistical calibrator (ECE=%.2f%%, Brier=%.4f, OOD=%.2f)",
+                    bundle.get("ece", 0.0) * 100,
+                    bundle.get("brier_score", 0.0),
+                    self.ood_threshold,
+                )
+            except Exception as exc:
+                logger.warning("Could not load calibrator.joblib: %s", exc)
+
     def warm_up(self) -> None:
         """Pay the cold-start cost once at server boot, not on the first live request."""
         self._infer_sync(np.zeros(32_000, dtype=np.float32))
@@ -237,26 +261,44 @@ class VoiceShieldClassifier:
             is_biological_jitter = True
             jitter = 0.021
 
-        # ── Multi-Lens Biometric Decision ─────────────────────────────────────
-        logger.info(
-            "Acoustic metrics: hf_ratio=%.3f jitter=%.3f bio_jitter=%s raw_cnn=%.3f",
-            hf_ratio, jitter, is_biological_jitter, raw_cnn,
-        )
-        if hf_ratio > 2.0:
-            # Neural vocoder carrier dispersion confirmed (HiFi-GAN/Tacotron artifact)
-            calibrated = 0.85 + 0.14 * min(1.0, (hf_ratio - 2.0) / 5.0)
-        elif not is_biological_jitter and (raw_cnn > 0.45 or hf_ratio > 0.60):
-            # Synthetic pitch signature confirmed (neural TTS mathematical regularity or phase jitter)
-            calibrated = 0.85 + 0.10 * max(raw_cnn, min(1.0, hf_ratio / 2.0))
-        elif is_biological_jitter and hf_ratio < 1.50:
-            # Biological vocal tract confirmed (human voice with natural micro-tremor)
-            calibrated = 0.02 + 0.05 * (hf_ratio / 1.50) + 0.03 * raw_cnn
-        elif is_biological_jitter:
-            # High-frequency content (e.g. sibilants / mic boost) but biological jitter confirmed
-            calibrated = 0.05 + 0.10 * min(1.0, hf_ratio / 2.0)
+        # ── Multi-Feature Continuous Confidence Blending (Track 1) ───────────
+        def _sigmoid(x: float, center: float, steepness: float) -> float:
+            return 1.0 / (1.0 + float(np.exp(-steepness * (x - center))))
+
+        hf_vote = _sigmoid(hf_ratio, center=0.40, steepness=10.0)
+        jitter_center_distance = min(
+            abs(jitter - 0.008), abs(jitter - 0.038)
+        ) if not (0.008 <= jitter <= 0.038) else 0.0
+        jitter_vote = _sigmoid(jitter_center_distance, center=0.010, steepness=80.0)
+        cnn_vote = raw_cnn
+        continuous_blend = 0.45 * hf_vote + 0.30 * jitter_vote + 0.25 * cnn_vote
+
+        # ── Statistical Calibrator & OOD Detection (Track 2) ──────────────────
+        is_low_confidence = False
+        ood_dist = 0.0
+        if self.calibrator is not None and self.mean_vec is not None and self.cov_inv is not None:
+            try:
+                from scipy.spatial.distance import mahalanobis
+                feat_vec = np.array([hf_ratio, jitter, raw_cnn], dtype=np.float32)
+                p_calibrated = float(self.calibrator.predict_proba([feat_vec])[0, 1])
+                ood_dist = float(mahalanobis(feat_vec, self.mean_vec, self.cov_inv))
+                is_low_confidence = bool(ood_dist > self.ood_threshold)
+                calibrated = 0.60 * p_calibrated + 0.40 * continuous_blend
+            except Exception as exc:
+                logger.warning("Statistical calibrator error, using continuous blend: %s", exc)
+                calibrated = continuous_blend
         else:
-            # Ambiguous / unvoiced transition
-            calibrated = 0.15 + 0.15 * raw_cnn
+            calibrated = continuous_blend
+
+        self.last_telemetry = {
+            "is_low_confidence": 1.0 if is_low_confidence else 0.0,
+            "ood_distance": round(ood_dist, 4),
+        }
+
+        logger.info(
+            "Acoustic metrics: hf_ratio=%.3f jitter=%.3f raw_cnn=%.3f -> score=%.4f (ood=%.2f low_conf=%s)",
+            hf_ratio, jitter, raw_cnn, calibrated, ood_dist, is_low_confidence,
+        )
 
         return round(float(np.clip(calibrated, 0.0001, 0.9999)), 4)
 

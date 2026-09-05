@@ -53,6 +53,7 @@ CATEGORIES: List[Category] = [
         r"कार्ड\s*(नंबर|संख्या)", r"एटीएम\s*कार्ड",
         r"\b[4-6]\s*tp\b", r"o[\s.]*t[\s.]*p", r"\d+\s*digit\s*(otp|pin|code)",
         r"unauthorized\s*(debit|charge|transaction|access)", r"verification\s*code",
+        r"او\s*ٹی\s*پی", r"پاسورڈ", r"کھاتہ", r"پن\s*نمبر",
     ]),
     Category("authority_impersonation", 0.40, [
         r"\bpolice\b", r"\bcbi\b", r"\bcustoms?\b", r"\bnarcotics\b", r"\bfedex\b",
@@ -70,6 +71,7 @@ CATEGORIES: List[Category] = [
         r"inspection\s*clearance", r"airport",
         r"(bijli|bijwi|vitran|vithran|witran|with\s*run|veteran|bajri|electricity)\s*(board|company|department|office|nigam)?",
         r"(with\s*run|veteran|vithran)\s*company",
+        r"کمپنی", r"کاریال", r"پولیس", r"سی\s*بی\s*آئی", r"بینک", r"وارنٹ", r"گرفتار",
     ]),
     Category("urgency_threat", 0.35, [
         r"\bimmediately\b", r"\burgent(ly)?\b", r"right\s*now", r"within\s*\d+\s*(min|hour|ghante)",
@@ -85,6 +87,7 @@ CATEGORIES: List[Category] = [
         r"permanently\s*blocked", r"cancel\s*this\s*transaction", r"tatkal", r"bakaya",
         r"तुरंत", r"जल्दी", r"बंद\s*हो\s*जाएगा", r"kisi\s*ko\s*mat\s*bata",
         r"دس[كک]ن[كک]शन", r"تتقال", r"کنیکشن",
+        r"بجلی", r"بجوی", r"دیسکنیکشن", r"کاٹ", r"بقائہ", r"ٹورنت", r"تتکار", r"فوری", r"فوراً",
     ]),
     Category("financial_request", 0.25, [
         r"send\s*money", r"pay\s*now", r"transfer\s*(the\s*)?money", r"upi\s*pin",
@@ -95,6 +98,7 @@ CATEGORIES: List[Category] = [
         r"ट्रांसफर", r"यूपीआई", r"गूगल\s*पे", r"फोन\s*पे", r"पेटीएम",
         r"प्रोसेसिंग\s*फीस", r"रिफंडेबल", r"क्लियरेंस\s*फीस",
         r"jurmana", r"jamakare", r"rupaye", r"rupees",
+        r"یوپیائی", r"یو\s*پی\s*آئی", r"جورمانا", r"جرمانہ", r"جمع", r"روپے", r"رکلے", r"بھکتان",
     ]),
     Category("lottery_prize", 0.35, [
         r"you\s*have\s*won", r"\blottery\b", r"lucky\s*draw", r"prize\s*money",

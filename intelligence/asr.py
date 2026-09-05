@@ -72,7 +72,7 @@ class Transcriber:
         return self._ensure_model()
 
     # ── transcription ────────────────────────────────────────────────
-    def transcribe_array(self, audio, sample_rate: int = 16000) -> dict:
+    def transcribe_array(self, audio, sample_rate: int = 16000, prompt: Optional[str] = None) -> dict:
         """
         Transcribe a mono float32 numpy array / list at `sample_rate`.
         Whisper expects 16 kHz; caller should resample if needed.
@@ -87,13 +87,19 @@ class Transcriber:
             audio = np.asarray(audio, dtype="float32")
 
             if self._backend == "faster-whisper":
-                segments, info = self._model.transcribe(audio, beam_size=1)
+                kwargs = {"beam_size": 1}
+                if prompt and prompt.strip():
+                    kwargs["initial_prompt"] = prompt.strip()[-250:]
+                segments, info = self._model.transcribe(audio, **kwargs)
                 text = " ".join(seg.text for seg in segments).strip()
                 lang = getattr(info, "language", None)
                 return {"text": text, "language": lang, "available": True}
 
             # openai-whisper
-            result = self._model.transcribe(audio, fp16=False)
+            kwargs = {"fp16": False}
+            if prompt and prompt.strip():
+                kwargs["initial_prompt"] = prompt.strip()[-250:]
+            result = self._model.transcribe(audio, **kwargs)
             return {
                 "text": (result.get("text") or "").strip(),
                 "language": result.get("language"),

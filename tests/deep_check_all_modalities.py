@@ -75,11 +75,11 @@ async def test_audio_file(file_path: str, expected_voice: str, expected_threat: 
                 break
                     
         # Drain remaining messages to capture background ASR completion
-        for _ in range(25):
-            if (last_voice == expected_voice) and (last_threat == expected_threat):
+        for _ in range(60):
+            if (last_voice == expected_voice) and (last_threat == expected_threat) and (not (expected_threat in ("HUMAN_VISHING", "AI_SYNTHETIC")) or hold_triggered):
                 break
             try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=0.3)
+                raw = await asyncio.wait_for(ws.recv(), timeout=0.5)
                 msg = json.loads(raw)
                 if msg.get("type") == "risk_update":
                     last_threat = msg.get("threat_category", last_threat)
@@ -131,6 +131,9 @@ async def main():
     for name, ok in results:
         print(f"  {name:35} : {'PASS' if ok else 'FAIL'}")
     print("========================================================")
+    all_ok = len(results) == len(tests) and all(ok for _, ok in results)
+    if not all_ok:
+        sys.exit(1)
 
 if __name__ == "__main__":
     asyncio.run(main())

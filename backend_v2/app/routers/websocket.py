@@ -87,6 +87,170 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
     last_matched_reasons: list[str] = []
     accumulated_transcript: str = ""
 
+    # Current telemetry state
+    spoof_prob: float = 0.0
+    last_start_ms: int = 0
+    last_end_ms: int = 0
+    last_reported_hf: float = 0.0150
+    last_jitter: float = 0.0
+    last_rms: float = 0.0
+
+    async def _emit_risk_update(is_speech_active: bool) -> None:
+        nonlocal hold_already_triggered
+        classifier = inf.classifier
+
+        # ── Full 3-layer fusion ──────────────────────────────────────
+        if _INTELLIGENCE_AVAILABLE:
+            three_layer_score = fuse_layers(
+                voice_authenticity=spoof_prob,
+                intent_risk=last_intent_risk,
+                call_signal_risk=last_signal_risk,
+            )
+        else:
+            three_layer_score = spoof_prob
+
+        fused_score = fusion.update(three_layer_score)
+        is_flagged = (
+            (spoof_prob >= settings.flag_threshold)
+            or (last_intent_risk >= 0.50)
+            or (fused_score >= settings.hold_threshold)
+        )
+        model_ver = getattr(classifier, "model_version", settings.model_version) if classifier else settings.model_version
+        verdict = to_verdict(fused_score)
+
+        # ── 3-Way Threat Classification ──────────────────────────────
+        voice_classification: Literal["HUMAN", "SYNTHETIC"] = "SYNTHETIC" if spoof_prob >= 0.50 else "HUMAN"
+        if last_intent_risk >= 0.50:
+            scam_risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "HIGH"
+        elif last_intent_risk >= 0.25:
+            scam_risk_level = "MEDIUM"
+        else:
+            scam_risk_level = "LOW"
+
+        if voice_classification == "SYNTHETIC":
+            threat_category: Literal["LEGITIMATE_HUMAN", "HUMAN_VISHING", "AI_SYNTHETIC"] = "AI_SYNTHETIC"
+        elif scam_risk_level in ("HIGH", "MEDIUM"):
+            threat_category = "HUMAN_VISHING"
+        else:
+            threat_category = "LEGITIMATE_HUMAN"
+
+        acoustic_features = {
+            "hf_ratio": last_reported_hf,
+            "rms": last_rms,
+            "vocoder_phase_jitter": last_jitter,
+            "is_low_confidence": float(getattr(classifier, "last_telemetry", {}).get("is_low_confidence", 0.0)) if classifier else 0.0,
+            "ood_distance": float(getattr(classifier, "last_telemetry", {}).get("ood_distance", 0.0)) if classifier else 0.0,
+        }
+
+        hold_data = None
+        try:
+            detection_id, hold_data = await _persist_detection(
+                call_id=call_id,
+                start_ms=last_start_ms,
+                end_ms=last_end_ms,
+                spoof_prob=spoof_prob,
+                fused_score=fused_score,
+                is_flagged=is_flagged,
+                verdict=verdict,
+                model_ver=model_ver,
+                auto_hold=(
+                    (fused_score >= settings.hold_threshold or last_intent_risk >= 0.50)
+                    and not hold_already_triggered
+                ),
+            )
+        except Exception as db_err:
+            logger.warning("Failed to persist detection for call_id=%s: %s", call_id, db_err)
+
+        if hold_data:
+            hold_already_triggered = True
+            hold_msg = HoldTriggered(
+                hold_id=hold_data["hold_id"],
+                triggered_at=hold_data["triggered_at"],
+                mock_reference=hold_data["mock_reference"],
+                verdict=verdict,
+            )
+            await _send_json(websocket, hold_msg.model_dump())
+
+        risk_msg = RiskUpdate(
+            window_start_ms=last_start_ms,
+            window_end_ms=last_end_ms,
+            spoof_probability=round(spoof_prob, 4),
+            fused_risk_score=round(fused_score, 4),
+            is_flagged=is_flagged,
+            verdict=verdict,
+            vad_active=is_speech_active,
+            model_version=model_ver,
+            language_detected=last_language,
+            intent_risk=round(last_intent_risk, 4),
+            call_signal_risk=round(last_signal_risk, 4),
+            matched_reasons=last_matched_reasons,
+            transcript=accumulated_transcript,
+            voice_classification=voice_classification,
+            scam_risk_level=scam_risk_level,
+            threat_category=threat_category,
+            acoustic_features=acoustic_features,
+        )
+        await _send_json(websocket, risk_msg.model_dump())
+
+    async def _check_asr(is_idle: bool = False) -> None:
+        nonlocal asr_task, last_intent_risk, last_signal_risk, last_language
+        nonlocal accumulated_transcript, last_matched_reasons
+        did_update = False
+        loop = asyncio.get_running_loop()
+
+        if asr_task is not None and asr_task.done():
+            try:
+                intent_result, signal_result, language, transcript = asr_task.result()
+                last_intent_risk = float(intent_result.get("intent_risk", 0.0))
+                last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
+                last_language = language or "unknown"
+                if transcript and transcript.strip():
+                    accumulated_transcript = (accumulated_transcript + " " + transcript.strip()).strip()
+
+                intent_matches = intent_result.get("matched", [])
+                signal_reasons = signal_result.get("reasons", [])
+                last_matched_reasons = (intent_matches + signal_reasons)[:6]
+                logger.info("ASR finished: intent=%.4f transcript='%s' matched=%s", last_intent_risk, transcript, intent_matches)
+                did_update = True
+            except Exception as exc:
+                logger.warning("Background ASR task failed: %s", exc)
+            asr_task = None
+
+        buffered_samples = sum(len(c) for c in speech_buffer)
+        min_samples = 8000 if is_idle else 32000
+        if _INTELLIGENCE_AVAILABLE and transcriber and buffered_samples >= min_samples and (asr_task is None):
+            max_samples = 128000
+            accum_samples = 0
+            to_transcribe: list[np.ndarray] = []
+            remaining_chunks: list[np.ndarray] = []
+            for chunk in speech_buffer:
+                if accum_samples < max_samples:
+                    to_transcribe.append(chunk)
+                    accum_samples += len(chunk)
+                else:
+                    remaining_chunks.append(chunk)
+            speech_buffer.clear()
+            speech_buffer.extend(remaining_chunks)
+
+            asr_audio = np.concatenate(to_transcribe)
+            call_metadata = {
+                "call_id": str(call_id),
+                "duration_s": last_end_ms / 1000.0,
+                "speech_windows": speech_window_count,
+                "current_risk": spoof_prob,
+            }
+            asr_task = loop.run_in_executor(
+                inf._executor,
+                _run_intelligence_sync,
+                asr_audio,
+                transcriber,
+                call_metadata,
+                accumulated_transcript,
+            )
+
+        if did_update:
+            await _emit_risk_update(is_speech_active=False)
+
     try:
         # Validate the call exists
         async with AsyncSessionLocal() as db:
@@ -102,17 +266,25 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 return
 
         while True:
+            # Poll with short timeout (0.1s) when background ASR is running or speech is buffered,
+            # so ASR completions and queued audio are handled immediately even if caller pauses.
+            recv_timeout = 0.1 if (asr_task is not None or len(speech_buffer) > 0) else 30.0
             try:
-                msg_data = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+                msg_data = await asyncio.wait_for(websocket.receive(), timeout=recv_timeout)
                 if msg_data.get("type") == "websocket.disconnect":
                     break
                 if "bytes" in msg_data and msg_data["bytes"]:
                     raw_frame = msg_data["bytes"]
+                    # Accumulate clean PCM for ASR transcription (not telephony-degraded)
+                    frame_pcm = np.frombuffer(raw_frame, dtype="<i2").astype(np.float32) / 32768.0
+                    speech_buffer.append(frame_pcm)
                 else:
-                    # Ignore text pings or keep-alive frames
+                    await _check_asr(is_idle=True)
                     continue
             except asyncio.TimeoutError:
-                await websocket.send_json({"type": "ping"})
+                await _check_asr(is_idle=True)
+                if asr_task is None and len(speech_buffer) == 0:
+                    await websocket.send_json({"type": "ping"})
                 continue
 
             # Process through the VAD pipeline
@@ -129,87 +301,17 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 await _send_json(websocket, vad_msg.model_dump())
 
                 if not is_speech:
-                    continue  # Don't run inference on silence
+                    await _check_asr(is_idle=True)
+                    continue
 
-                # ── Layer 1: Voice authenticity ──────────────────────────────
+                last_start_ms = start_ms
+                last_end_ms = end_ms
                 classifier = inf.classifier
                 if classifier is None:
                     continue
 
                 spoof_prob = await classifier.infer(window)
                 speech_window_count += 1
-
-                # Accumulate non-overlapping audio for ASR (0.5s stride = 8000 samples)
-                speech_buffer.append(window[-8000:])
-
-                # ── Layer 2 + 3: Background non-blocking ASR ─────────────────
-                if asr_task is not None and asr_task.done():
-                    try:
-                        intent_result, signal_result, language, transcript = asr_task.result()
-                        last_intent_risk = float(intent_result.get("intent_risk", 0.0))
-                        last_signal_risk = float(signal_result.get("call_signal_risk", 0.0))
-                        last_language = language or "unknown"
-                        if transcript and transcript.strip():
-                            accumulated_transcript = (accumulated_transcript + " " + transcript.strip()).strip()
-
-                        # Merge matched reasons from both layers
-                        intent_matches = intent_result.get("matched", [])
-                        signal_reasons = signal_result.get("reasons", [])
-                        last_matched_reasons = (intent_matches + signal_reasons)[:6]
-                        logger.info("ASR finished: intent=%.4f transcript='%s' matched=%s", last_intent_risk, transcript, intent_matches)
-                    except Exception as exc:
-                        logger.warning("Background ASR task failed: %s", exc)
-                    asr_task = None
-
-                # Trigger ASR when at least 4 chunks (2.0s of speech) are queued and no ASR is in flight
-                if _INTELLIGENCE_AVAILABLE and transcriber and len(speech_buffer) >= 4 and (asr_task is None):
-                    asr_audio = np.concatenate(speech_buffer)
-                    speech_buffer.clear()
-                    call_metadata = {
-                        "call_id": str(call_id),
-                        "duration_s": end_ms / 1000.0,
-                        "speech_windows": speech_window_count,
-                        "current_risk": spoof_prob,
-                    }
-                    asr_task = loop.run_in_executor(
-                        inf._executor,
-                        _run_intelligence_sync,
-                        asr_audio,
-                        transcriber,
-                        call_metadata,
-                        accumulated_transcript,
-                    )
-
-                # ── Full 3-layer fusion ──────────────────────────────────────
-                if _INTELLIGENCE_AVAILABLE:
-                    three_layer_score = fuse_layers(
-                        voice_authenticity=spoof_prob,
-                        intent_risk=last_intent_risk,
-                        call_signal_risk=last_signal_risk,
-                    )
-                else:
-                    three_layer_score = spoof_prob
-
-                fused_score = fusion.update(three_layer_score)
-                is_flagged = (spoof_prob >= settings.flag_threshold) or (last_intent_risk >= 0.50) or (fused_score >= settings.hold_threshold)
-                model_ver = getattr(classifier, "model_version", settings.model_version)
-                verdict = to_verdict(fused_score)
-
-                # ── 3-Way Threat Classification ──────────────────────────────
-                voice_classification: Literal["HUMAN", "SYNTHETIC"] = "SYNTHETIC" if spoof_prob >= 0.50 else "HUMAN"
-                if last_intent_risk >= 0.50:
-                    scam_risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "HIGH"
-                elif last_intent_risk >= 0.25:
-                    scam_risk_level = "MEDIUM"
-                else:
-                    scam_risk_level = "LOW"
-
-                if voice_classification == "SYNTHETIC":
-                    threat_category: Literal["LEGITIMATE_HUMAN", "HUMAN_VISHING", "AI_SYNTHETIC"] = "AI_SYNTHETIC"
-                elif scam_risk_level in ("HIGH", "MEDIUM"):
-                    threat_category = "HUMAN_VISHING"
-                else:
-                    threat_category = "LEGITIMATE_HUMAN"
 
                 # ── Acoustic Telemetry ───────────────────────────────────────
                 window_np = window.astype(np.float32)
@@ -223,68 +325,18 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                 hf_ratio = round(hf_e / lf_e, 4)
                 rms_val = round(float(np.sqrt(np.mean(window_np ** 2))), 4)
                 if rms_val < 0.012:
-                    reported_hf = 0.0150
-                    jitter = 0.0
+                    last_reported_hf = 0.0150
+                    last_jitter = 0.0
                 else:
-                    reported_hf = hf_ratio
-                    jitter = round(min(1.0, max(float(spoof_prob * 0.90) if spoof_prob >= 0.40 else 0.0, (hf_ratio - 0.18) / 0.32)), 4)
+                    last_reported_hf = hf_ratio
+                    last_jitter = round(min(1.0, max(float(spoof_prob * 0.90) if spoof_prob >= 0.40 else 0.0, (hf_ratio - 0.18) / 0.32)), 4)
+                last_rms = rms_val
 
-                acoustic_features = {
-                    "hf_ratio": reported_hf,
-                    "rms": rms_val,
-                    "vocoder_phase_jitter": jitter,
-                }
+                # Check background ASR and trigger if >= 4 chunks
+                await _check_asr(is_idle=False)
 
-                hold_data = None
-                try:
-                    detection_id, hold_data = await _persist_detection(
-                        call_id=call_id,
-                        start_ms=start_ms,
-                        end_ms=end_ms,
-                        spoof_prob=spoof_prob,
-                        fused_score=fused_score,
-                        is_flagged=is_flagged,
-                        verdict=verdict,
-                        model_ver=model_ver,
-                        auto_hold=(
-                            fused_score >= settings.hold_threshold
-                            and not hold_already_triggered
-                        ),
-                    )
-                except Exception as db_err:
-                    logger.warning("Failed to persist detection for call_id=%s: %s", call_id, db_err)
-
-                if hold_data:
-                    hold_already_triggered = True
-                    hold_msg = HoldTriggered(
-                        hold_id=hold_data["hold_id"],
-                        triggered_at=hold_data["triggered_at"],
-                        mock_reference=hold_data["mock_reference"],
-                        verdict=verdict,
-                    )
-                    await _send_json(websocket, hold_msg.model_dump())
-
-                # Push risk update — all three layers and 3-way taxonomy now included
-                risk_msg = RiskUpdate(
-                    window_start_ms=start_ms,
-                    window_end_ms=end_ms,
-                    spoof_probability=round(spoof_prob, 4),
-                    fused_risk_score=round(fused_score, 4),
-                    is_flagged=is_flagged,
-                    verdict=verdict,
-                    vad_active=is_speech,
-                    model_version=model_ver,
-                    language_detected=last_language,
-                    intent_risk=round(last_intent_risk, 4),
-                    call_signal_risk=round(last_signal_risk, 4),
-                    matched_reasons=last_matched_reasons,
-                    transcript=accumulated_transcript,
-                    voice_classification=voice_classification,
-                    scam_risk_level=scam_risk_level,
-                    threat_category=threat_category,
-                    acoustic_features=acoustic_features,
-                )
-                await _send_json(websocket, risk_msg.model_dump())
+                # Emit risk update for current window
+                await _emit_risk_update(is_speech_active=is_speech)
 
     except WebSocketDisconnect:
         logger.info("WS disconnected for call_id=%s", call_id)
@@ -317,7 +369,7 @@ def _run_intelligence_sync(
 
     Returns: (intent_result_dict, signal_result_dict, language_str, transcript_str)
     """
-    asr_out = transcriber.transcribe_array(audio, sample_rate=16000)
+    asr_out = transcriber.transcribe_array(audio, sample_rate=16000, prompt=accumulated_text)
     transcript = asr_out.get("text", "") or ""
     language = asr_out.get("language")
 

@@ -301,7 +301,8 @@ class VoiceShieldClassifier:
                 from scipy.spatial.distance import mahalanobis
                 feat_vec = np.array([hf_ratio, jitter, raw_cnn], dtype=np.float32)
                 ood_dist = float(mahalanobis(feat_vec, self.mean_vec, self.cov_inv))
-                is_low_confidence = bool(ood_dist > self.ood_threshold)
+                # Only flag low confidence when prediction is genuinely borderline (0.25 <= calibrated <= 0.65)
+                is_low_confidence = bool((ood_dist > self.ood_threshold) and (0.25 <= calibrated <= 0.65))
             except Exception:
                 pass
 

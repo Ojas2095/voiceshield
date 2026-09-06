@@ -88,3 +88,45 @@ html, body {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgb(var(--c-line)); border-radius: 4px; }
 :focus-visible { outline: 2px solid rgb(var(--c-brand)); outline-offset: 1px; }
+
+/* Print & PDF Export Styles for Legal Certificate of Admissibility (BSA 2023 §63) */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0b1c30 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  aside, header, nav, .no-print {
+    display: none !important;
+  }
+
+  .pl-64 {
+    padding-left: 0 !important;
+  }
+
+  main {
+    padding-top: 0 !important;
+    min-height: auto !important;
+  }
+
+  .panel {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-break-inside-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+

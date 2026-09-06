@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-canvas text-ink">
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-surface border-r border-line z-50 flex flex-col justify-between select-none">
+      <aside className="fixed left-0 top-0 h-full w-64 bg-surface border-r border-line z-50 flex flex-col justify-between select-none print:hidden">
         <div className="flex flex-col">
           <div className="p-4 border-b border-line flex items-center gap-3">
             <span className="w-9 h-9 rounded bg-navy text-surface flex items-center justify-center shrink-0">
@@ -120,8 +120,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main column */}
-      <div className="pl-64">
-        <header className="fixed top-0 left-64 right-0 h-14 bg-surface border-b border-line z-40 flex items-center justify-between px-6 select-none">
+      <div className="pl-64 print:pl-0">
+        <header className="fixed top-0 left-64 right-0 h-14 bg-surface border-b border-line z-40 flex items-center justify-between px-6 select-none print:hidden">
           <div className="flex items-center gap-4 min-w-0">
             <div className="flex items-center gap-2 mono text-data text-muted">
               <Terminal className="w-4 h-4 text-navy" />
@@ -144,7 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="pt-14 min-h-screen">{children}</main>
+        <main className="pt-14 print:pt-0 min-h-screen print:min-h-0">{children}</main>
       </div>
     </div>
   );

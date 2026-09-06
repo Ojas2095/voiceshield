@@ -150,6 +150,7 @@ class VoiceShieldClassifier:
             from ai.layer1_authenticity import Layer1Detector
             self.detector = Layer1Detector(wav2vec_model_name=wav_name, device=self.device)
             self.detector.load_weights(str(head_w), str(cnn_w))
+            self.mel_cnn = self.detector.mel_cnn
             self._mode = "dual"
             self.model_version = "dualbranch-v1"  # wav2vec2 + MelCNN
             logger.info("Loaded DUAL-BRANCH detector (wav2vec2 head + MelCNN) on %s", self.device)
@@ -207,20 +208,19 @@ class VoiceShieldClassifier:
         torch = self._torch
         waveform = torch.from_numpy(window.astype(np.float32)).unsqueeze(0)
 
-        if self._mode == "dual":
+        # Neural Branch (Dual wav2vec2+MelCNN or MelCNN-only)
+        raw_neural = 0.0
+        if self._mode == "dual" and self.detector is not None:
             chunk = self._preprocess(waveform, source_sr=16000, apply_degradation=False)
             result = self.detector.predict(chunk.waveform_16k, chunk.mel_spectrogram)
-            return float(result["p_fake"])
-
-        # MelCNN branch
-        raw_cnn = 0.0
-        if self.mel_cnn is not None:
+            raw_neural = float(result["p_fake"])
+        elif self.mel_cnn is not None:
             waveform_8k = self._resample(waveform, 16000, self._telephony_sr)
             waveform_8k = self._pad_or_trim(waveform_8k, self._window_samples_8k)
             mel = self._compute_mel(waveform_8k, sr=self._telephony_sr)
             mel_tensor = mel.unsqueeze(0).to(self.device)
             with torch.no_grad():
-                raw_cnn = float(self.mel_cnn(mel_tensor).squeeze().item())
+                raw_neural = float(self.mel_cnn(mel_tensor).squeeze().item())
 
         window_np = window.astype(np.float32)
         n_samples = min(len(window_np), 32000)
@@ -272,12 +272,12 @@ class VoiceShieldClassifier:
             jitter = 0.021
 
         # ── Statistical Calibrated Scoring (Track 2) ──────────────────────────
-        feat_vec = np.array([hf_ratio, jitter, raw_cnn], dtype=np.float32)
+        feat_vec = np.array([hf_ratio, jitter, raw_neural], dtype=np.float32)
         if self.calibrator is not None:
             calibrated = float(self.calibrator.predict_proba([feat_vec])[0, 1])
         else:
             # Continuous mathematical sigmoid blend fallback
-            z = -4.23 + 4.17 * hf_ratio + 0.21 * jitter + 1.49 * raw_cnn
+            z = -4.23 + 4.17 * hf_ratio + 0.21 * jitter + 1.49 * raw_neural
             calibrated = 1.0 / (1.0 + np.exp(-z))
 
         # Biological Vocal Tract Invariant Protection:
@@ -295,7 +295,7 @@ class VoiceShieldClassifier:
         if self.mean_vec is not None and self.cov_inv is not None:
             try:
                 from scipy.spatial.distance import mahalanobis
-                feat_vec = np.array([hf_ratio, jitter, raw_cnn], dtype=np.float32)
+                feat_vec = np.array([hf_ratio, jitter, raw_neural], dtype=np.float32)
                 ood_dist = float(mahalanobis(feat_vec, self.mean_vec, self.cov_inv))
                 # Only flag low confidence when prediction is genuinely borderline (0.25 <= calibrated <= 0.65)
                 is_low_confidence = bool((ood_dist > self.ood_threshold) and (0.25 <= calibrated <= 0.65))
@@ -308,8 +308,8 @@ class VoiceShieldClassifier:
         }
 
         logger.info(
-            "Acoustic metrics: hf_ratio=%.3f jitter=%.3f raw_cnn=%.3f -> score=%.4f (ood=%.2f low_conf=%s)",
-            hf_ratio, jitter, raw_cnn, calibrated, ood_dist, is_low_confidence,
+            "Acoustic metrics: hf_ratio=%.3f jitter=%.3f raw_neural=%.3f -> score=%.4f (ood=%.2f low_conf=%s)",
+            hf_ratio, jitter, raw_neural, calibrated, ood_dist, is_low_confidence,
         )
 
         return round(calibrated, 4)

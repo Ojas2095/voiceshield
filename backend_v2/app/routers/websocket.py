@@ -275,9 +275,23 @@ async def stream_audio(websocket: WebSocket, call_id: uuid.UUID) -> None:
                     break
                 if "bytes" in msg_data and msg_data["bytes"]:
                     raw_frame = msg_data["bytes"]
+                    # Security Guard: cap single frame size to 256KB to reject buffer bombs / DoS attempts
+                    if len(raw_frame) > 256 * 1024:
+                        logger.warning("Rejecting oversized audio frame (%d bytes) from call_id=%s", len(raw_frame), call_id)
+                        continue
+                    # Security Guard: slice unaligned odd bytes
+                    rem = len(raw_frame) % 2
+                    if rem != 0:
+                        raw_frame = raw_frame[:-rem]
+                    if not raw_frame:
+                        continue
                     # Accumulate clean PCM for ASR transcription (not telephony-degraded)
-                    frame_pcm = np.frombuffer(raw_frame, dtype="<i2").astype(np.float32) / 32768.0
-                    speech_buffer.append(frame_pcm)
+                    try:
+                        frame_pcm = np.frombuffer(raw_frame, dtype="<i2").astype(np.float32) / 32768.0
+                        speech_buffer.append(frame_pcm)
+                    except Exception as pcm_err:
+                        logger.warning("Malformed PCM frame ignored: %s", pcm_err)
+                        continue
                 else:
                     await _check_asr(is_idle=True)
                     continue

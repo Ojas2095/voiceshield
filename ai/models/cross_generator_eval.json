@@ -1,0 +1,63 @@
+{
+  "dataset_summary": {
+    "total_samples": 866,
+    "total_fake_samples": 225,
+    "total_real_samples": 641,
+    "engines": {
+      "elevenlabs": 110,
+      "xtts": 55,
+      "vocoder": 60
+    }
+  },
+  "experiments": {
+    "holdout_elevenlabs": {
+      "held_out_engine": "elevenlabs",
+      "train_samples": 756,
+      "test_fake_samples": 110,
+      "test_human_samples": 641,
+      "eer": 0.3312,
+      "eer_percentage": 33.12,
+      "optimal_threshold": 0.0097,
+      "auc_roc": 0.7283,
+      "detection_rate_at_0_50": 0.0,
+      "human_rejection_rate_at_0_50": 100.0
+    },
+    "holdout_xtts": {
+      "held_out_engine": "xtts",
+      "train_samples": 811,
+      "test_fake_samples": 55,
+      "test_human_samples": 641,
+      "eer": 0.0,
+      "eer_percentage": 0.0,
+      "optimal_threshold": 0.9446,
+      "auc_roc": 1.0,
+      "detection_rate_at_0_50": 100.0,
+      "human_rejection_rate_at_0_50": 99.38
+    },
+    "full_multi_engine": {
+      "eer": 0.152,
+      "eer_percentage": 15.2,
+      "auc_roc": 0.9476,
+      "per_engine_detection": {
+        "elevenlabs": {
+          "samples": 110,
+          "detection_rate_at_0_50": 0.0,
+          "mean_probability": 0.3735,
+          "peak_probability": 0.446
+        },
+        "xtts": {
+          "samples": 55,
+          "detection_rate_at_0_50": 100.0,
+          "mean_probability": 0.9983,
+          "peak_probability": 1.0
+        },
+        "vocoder": {
+          "samples": 60,
+          "detection_rate_at_0_50": 100.0,
+          "mean_probability": 0.985,
+          "peak_probability": 1.0
+        }
+      }
+    }
+  }
+}

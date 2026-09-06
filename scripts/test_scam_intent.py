@@ -36,6 +36,7 @@ SANITY_CASES = [
     ('Hard Neg: Real bank advisory', 'Good morning, this is ICICI Bank fraud alert service. We noticed unusual activity. Please check your net banking or visit your branch. Never share your password with anyone.'),
     ('Hard Neg: Tech ML discussion', 'We are building a machine learning model for cyber crime and credit card fraud prevention.'),
     ('Hard Neg: Past customs anecdote', 'My friend was telling me yesterday about how someone got arrested by customs at the airport for smuggled goods, crazy story!'),
+    ('Hard Neg: Real electricity bill reminder', 'This is a reminder call from the electricity department, your bill of 1200 rupees is due this week, please pay before the due date to avoid late fee.'),
 
     # Confirmed Scam Scenarios
     ('Scam: SBI OTP Phishing', 'Dear customer your SBI debit card is blocked. Please share the 6-digit OTP sent to your phone immediately to verify.'),

@@ -312,6 +312,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=30, help="Training epochs")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--cnn_only", action="store_true", help="Train only the MelCNN (skip wav2vec2)")
+    parser.add_argument("--head_only", action="store_true", help="Train only the wav2vec2 head (skip MelCNN)")
     parser.add_argument("--holdout_generator", type=str, default=None,
                         help="Generator to EXCLUDE from training (e.g. 'xtts_v2') so it stays "
                              "unseen — then evaluate on it to PROVE cross-generator generalization")
@@ -331,7 +332,10 @@ if __name__ == "__main__":
     dataset = VoiceShieldDataset(args.data_dir, exclude_generators=exclude, manifest_name=train_manifest)
 
     # Train CNN first (faster, no large backbone needed)
-    train_mel_cnn(dataset, epochs=args.epochs, batch_size=args.batch_size, output_dir=args.output_dir)
+    if not args.head_only:
+        train_mel_cnn(dataset, epochs=args.epochs, batch_size=args.batch_size, output_dir=args.output_dir)
+    else:
+        print("\n[SKIP] MelCNN training (--head_only flag)")
 
     # Train wav2vec2 head (needs GPU ideally)
     if not args.cnn_only:

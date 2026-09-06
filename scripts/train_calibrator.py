@@ -129,8 +129,16 @@ def compute_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> flo
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="VoiceShield Statistical Calibrator & OOD Trainer")
+    parser.add_argument("--holdout_engine", type=str, default=None,
+                        help="Exclude specific synthetic engine from training to evaluate cross-generator EER (e.g. elevenlabs, xtts)")
+    args = parser.parse_args()
+
     print("=" * 75)
     print("VOICESHIELD: TRAINING STATISTICAL CALIBRATOR WITH OOD AWARENESS")
+    if args.holdout_engine:
+        print(f"** HOLDOUT MODE ACTIVE: Excluding '{args.holdout_engine}' from training **")
     print("=" * 75)
 
     clf = VoiceShieldClassifier()
@@ -138,19 +146,24 @@ def main():
 
     X, y, class_tags = [], [], []
 
-    # 1. AI Synthetic Clones & Neural Vocoders
-    ai_paths = (
-        list((REPO_ROOT / "frontend/public/demo").glob("cloned_*.wav")) +
-        sorted(list((REPO_ROOT / "data/fake").glob("*.wav")))[:60]
-    )
-    print(f"Processing {len(ai_paths)} AI clone and neural vocoder audio files...")
-    for p in ai_paths:
-        if p.exists():
-            feats = process_audio_file(p, clf)
-            for f in feats:
-                X.append(f)
-                y.append(1)
-                class_tags.append("ai_clone")
+    # 1. AI Synthetic Clones & Neural Vocoders categorized by engine
+    ai_engines = {
+        "elevenlabs": sorted(list((REPO_ROOT / "data/fake/elevenlabs").glob("*.wav"))),
+        "xtts": list((REPO_ROOT / "frontend/public/demo").glob("cloned_*.wav")),
+        "vocoder": sorted(list((REPO_ROOT / "data/fake").glob("*.wav")))[:60],
+    }
+
+    total_ai_files = sum(len(paths) for paths in ai_engines.values())
+    print(f"Processing {total_ai_files} AI clone and neural vocoder audio files across {len(ai_engines)} engines...")
+    for eng_name, paths in ai_engines.items():
+        print(f"  - Engine [{eng_name}]: {len(paths)} files")
+        for p in paths:
+            if p.exists():
+                feats = process_audio_file(p, clf)
+                for f in feats:
+                    X.append(f)
+                    y.append(1)
+                    class_tags.append(eng_name)
 
     # 2. Real Human Speech (Multi-Speaker: Indian English, Hindi, US Female, Telephony)
     real_team_ksp = list((REPO_ROOT / "data/real").glob("real_team_ksp_*.wav"))
@@ -164,7 +177,7 @@ def main():
     real_speech = sorted(list((REPO_ROOT / "data/real").glob("real_speech_*.wav")))[:30]
 
     real_paths = real_team_ksp + real_team_slt + real_team_hindi + real_demo + real_speech
-    print(f"Processing {len(real_paths)} real human speech files across multiple speakers/dialects...")
+    print(f"\nProcessing {len(real_paths)} real human speech files across multiple speakers/dialects...")
     for p in real_paths:
         if p.exists():
             feats = process_audio_file(p, clf)
@@ -198,11 +211,58 @@ def main():
 
     X = np.array(X, dtype=np.float32)
     y = np.array(y, dtype=np.int32)
+    class_tags = np.array(class_tags)
+
     print(f"\nFeature matrix assembled: {X.shape[0]} samples x {X.shape[1]} features")
     print(f"  - Synthetic AI Clones: {np.sum(y == 1)}")
     print(f"  - Real & Replayed Human Speech: {np.sum(y == 0)}")
 
-    # Fit Logistic Calibrator
+    # Handle Holdout Split if requested
+    if args.holdout_engine:
+        holdout = args.holdout_engine.lower()
+        train_mask = (class_tags != holdout)
+        test_ai_mask = (class_tags == holdout)
+        test_human_mask = (y == 0)
+
+        X_train, y_train = X[train_mask], y[train_mask]
+        X_test_ai = X[test_ai_mask]
+        X_test_human = X[test_human_mask]
+
+        print(f"\n[Holdout Engine: {holdout}]")
+        print(f"  Training samples: {len(X_train)} (excluding all {np.sum(test_ai_mask)} '{holdout}' clips)")
+        print(f"  Held-out test fake samples: {len(X_test_ai)}")
+        print(f"  Test real human samples: {len(X_test_human)}")
+
+        calibrator = LogisticRegression(class_weight="balanced", random_state=42, max_iter=1000)
+        calibrator.fit(X_train, y_train)
+
+        # Evaluate on unseen held-out engine vs real humans
+        ai_scores = calibrator.predict_proba(X_test_ai)[:, 1]
+        human_scores = calibrator.predict_proba(X_test_human)[:, 1]
+
+        # Compute EER
+        thresholds = np.linspace(0.0, 1.0, 1001)
+        best_diff = 1.0
+        eer = 0.0
+        opt_thresh = 0.50
+        for th in thresholds:
+            fpr = float(np.mean(human_scores >= th))
+            fnr = float(np.mean(ai_scores < th))
+            diff = abs(fpr - fnr)
+            if diff < best_diff:
+                best_diff = diff
+                eer = (fpr + fnr) / 2.0
+                opt_thresh = th
+
+        ai_acc = float(np.mean(ai_scores >= 0.50)) * 100.0
+        human_acc = float(np.mean(human_scores < 0.50)) * 100.0
+        print(f"\n✔ HOLDOUT GENERALIZATION REPORT FOR [{holdout.upper()}]:")
+        print(f"  Held-Out Synthetic Detection Rate: {ai_acc:.2f}% (Peak: {np.max(ai_scores):.4f}, Mean: {np.mean(ai_scores):.4f})")
+        print(f"  Real Human Correct Rejection Rate: {human_acc:.2f}% (Mean: {np.mean(human_scores):.4f})")
+        print(f"  Cross-Generator Equal Error Rate (EER): {eer * 100:.2f}% (at threshold {opt_thresh:.3f})")
+        return {"engine": holdout, "eer": round(eer, 4), "n_samples": int(len(X_test_ai)), "ai_accuracy": round(ai_acc, 2)}
+
+    # Fit Full Logistic Calibrator
     calibrator = LogisticRegression(class_weight="balanced", random_state=42, max_iter=1000)
     calibrator.fit(X, y)
     probs = calibrator.predict_proba(X)[:, 1]

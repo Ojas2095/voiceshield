@@ -74,17 +74,17 @@ export default function MobileSimulatorPage() {
   // Real-time detection states
   const [fusedRisk, setFusedRisk] = useState<number>(0.0);
   const [verdict, setVerdict] = useState<'ANALYZING' | 'REAL' | 'SUSPICIOUS' | 'FRAUD'>('ANALYZING');
+  const [threatCategory, setThreatCategory] = useState<'LEGITIMATE_HUMAN' | 'HUMAN_VISHING' | 'AI_SYNTHETIC'>('LEGITIMATE_HUMAN');
   const [holdTriggered, setHoldTriggered] = useState(false);
   const [holdReference, setHoldReference] = useState<string | null>(null);
   const [callId, setCallId] = useState<string | null>(null);
   const [vadActive, setVadActive] = useState(false);
-  const [audioStreamMode, setAudioStreamMode] = useState<'simulator' | 'mic'>('simulator');
   const [isFrozen, setIsFrozen] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioSourceRef = useRef<AudioNode | null>(null);
+  const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Call timer
   useEffect(() => {
@@ -101,14 +101,20 @@ export default function MobileSimulatorPage() {
     };
   }, [callState]);
 
-  // Clean up WebSocket on teardown
+  // Clean up all resources on unmount
   useEffect(() => {
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
+      if (streamIntervalRef.current) {
+        clearInterval(streamIntervalRef.current);
+        streamIntervalRef.current = null;
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
     };
   }, []);
@@ -121,50 +127,70 @@ export default function MobileSimulatorPage() {
 
   const startSession = async () => {
     try {
+      // 1. Initial UI states
       setCallState('connected');
-      setFusedRisk(0.05);
+      setFusedRisk(0.0);
       setVerdict('ANALYZING');
+      setThreatCategory('LEGITIMATE_HUMAN');
+      setVadActive(false);
       setHoldTriggered(false);
       setHoldReference(null);
       setIsFrozen(false);
 
-      // 1. Call Backend to start call session
+      // 2. Call Backend to start call session
       const res = await fetch(`${API_BASE}/api/calls/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'phone_sim' })
       });
+      if (!res.ok) {
+        throw new Error(`Failed to start call session: ${res.statusText}`);
+      }
       const data = await res.json();
       const newCallId = data.call_id;
       setCallId(newCallId);
 
-      // 2. Open WebSocket to backend
+      // 3. Open WebSocket to backend
       const wsProtocol = API_BASE.startsWith('https') ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${API_BASE.replace(/^https?:\/\//, '')}/ws/stream/${newCallId}`;
       const ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'risk_update') {
-            setFusedRisk(msg.fused_risk_score ?? 0);
-            setVerdict(msg.verdict ?? 'REAL');
+            if (typeof msg.fused_risk_score === 'number') {
+              setFusedRisk(msg.fused_risk_score);
+            }
+            if (msg.verdict) {
+              setVerdict(msg.verdict);
+            }
+            if (msg.threat_category) {
+              setThreatCategory(msg.threat_category);
+            }
+            if (typeof msg.vad_active === 'boolean') {
+              setVadActive(msg.vad_active);
+            }
+          } else if (msg.type === 'vad_update') {
+            setVadActive(Boolean(msg.vad_active));
           } else if (msg.type === 'hold_triggered') {
             setHoldTriggered(true);
             setHoldReference(msg.mock_reference ?? `HOLD-${new Date().toISOString().slice(0, 10)}`);
-          } else if (msg.type === 'vad_update') {
-            setVadActive(msg.vad_active);
+            setIsFrozen(true);
           }
-        } catch {
-          // ignore
+        } catch (err) {
+          console.warn('WS message parse error:', err);
         }
       };
 
-      // 3. Play and stream the selected scenario audio
-      if (audioStreamMode === 'simulator') {
-        streamAudioFile(ws, selectedScenario.audioFile);
-      }
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
+
+      // 4. Stream audio file through resampler and audio element
+      streamAudioFile(ws, selectedScenario.audioFile);
     } catch (err) {
       console.error('Failed to start call session:', err);
     }
@@ -172,55 +198,123 @@ export default function MobileSimulatorPage() {
 
   const streamAudioFile = async (ws: WebSocket, audioPath: string) => {
     try {
+      // 1. Fetch the raw audio file
       const response = await fetch(audioPath);
+      if (!response.ok) {
+        throw new Error(`Failed to load audio: ${response.status}`);
+      }
       const arrayBuffer = await response.arrayBuffer();
-      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({ sampleRate: 16000 });
-      audioContextRef.current = ctx;
-      
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      const floatData = audioBuffer.getChannelData(0);
-      
-      // Also play through speaker if enabled
-      const bufferSource = ctx.createBufferSource();
-      bufferSource.buffer = audioBuffer;
-      bufferSource.connect(ctx.destination);
-      bufferSource.start();
-      audioSourceRef.current = bufferSource;
 
-      // Convert float32 to Int16 PCM and stream chunks
-      const int16Data = new Int16Array(floatData.length);
-      for (let i = 0; i < floatData.length; i++) {
-        const s = Math.max(-1, Math.min(1, floatData[i]));
-        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      // 2. Decode and resample accurately to 16 kHz mono using OfflineAudioContext
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const decodeCtx = new AC();
+      const decoded = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
+      decodeCtx.close();
+
+      const TARGET_SR = 16000;
+      const frames = Math.max(1, Math.ceil(decoded.duration * TARGET_SR));
+      const offline = new OfflineAudioContext(1, frames, TARGET_SR);
+      const srcNode = offline.createBufferSource();
+      srcNode.buffer = decoded;
+      srcNode.connect(offline.destination);
+      srcNode.start();
+      const rendered = await offline.startRendering();
+      const samples = rendered.getChannelData(0); // Float32 @ 16 kHz mono
+
+      // 3. Convert Float32 to Int16 PCM array
+      const int16Data = new Int16Array(samples.length);
+      for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
 
-      // Stream in 200ms chunks (3200 samples = 6400 bytes)
-      const chunkSize = 3200;
+      // 4. Play audible sound through speaker if enabled
+      try {
+        const audio = new Audio(audioPath);
+        audio.muted = !speakerOn;
+        audioRef.current = audio;
+        audio.play().catch(e => console.warn('Audio play auto-blocked:', e));
+      } catch (e) {
+        console.warn('Audio element error:', e);
+      }
+
+      // 5. Send 500ms chunks (8000 samples = 16000 bytes) every 500ms
+      const CHUNK_SAMPLES = 8000;
       let offset = 0;
 
-      const interval = setInterval(() => {
-        if (ws.readyState !== WebSocket.OPEN || offset >= int16Data.length) {
-          clearInterval(interval);
-          return;
-        }
-        const chunk = int16Data.subarray(offset, offset + chunkSize);
-        ws.send(chunk.buffer);
-        offset += chunkSize;
-      }, 100);
+      const sendChunks = () => {
+        if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+
+        streamIntervalRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+            if (streamIntervalRef.current) {
+              clearInterval(streamIntervalRef.current);
+              streamIntervalRef.current = null;
+            }
+            return;
+          }
+
+          if (ws.readyState !== WebSocket.OPEN) {
+            return; // Wait for open state without terminating interval
+          }
+
+          if (offset >= int16Data.length) {
+            if (streamIntervalRef.current) {
+              clearInterval(streamIntervalRef.current);
+              streamIntervalRef.current = null;
+            }
+            return;
+          }
+
+          const end = Math.min(offset + CHUNK_SAMPLES, int16Data.length);
+          // CRITICAL: use .slice() to ensure the ArrayBuffer is only the chunk!
+          const chunk = int16Data.slice(offset, end);
+          ws.send(chunk.buffer);
+          offset += CHUNK_SAMPLES;
+        }, 500);
+      };
+
+      if (ws.readyState === WebSocket.OPEN) {
+        sendChunks();
+      } else {
+        ws.addEventListener('open', sendChunks, { once: true });
+      }
     } catch (err) {
       console.error('Audio streaming error:', err);
     }
   };
 
-  const handleDeclineOrDrop = () => {
+  const handleDeclineOrDrop = async () => {
+    const wasConnected = (callState === 'connected');
     setCallState('ended');
-    if (wsRef.current) wsRef.current.close();
-    if (audioSourceRef.current) {
-      try { (audioSourceRef.current as AudioBufferSourceNode).stop(); } catch {}
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
-    setTimeout(() => {
-      setCallState('ringing');
-    }, 2000);
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    if (callId) {
+      try {
+        await fetch(`${API_BASE}/api/calls/${callId}/stop`, { method: 'POST' });
+      } catch {
+        // non-fatal
+      }
+    }
+
+    // Only auto-reset if declined while ringing
+    if (!wasConnected) {
+      setTimeout(() => {
+        setCallState('ringing');
+      }, 1500);
+    }
   };
 
   const handleManualHold = async () => {
@@ -228,12 +322,24 @@ export default function MobileSimulatorPage() {
     try {
       setIsFrozen(true);
       const res = await fetch(`${API_BASE}/api/calls/${callId}/hold`, { method: 'POST' });
-      const data = await res.json();
-      setHoldTriggered(true);
-      setHoldReference(data.mock_reference);
+      if (res.ok) {
+        const data = await res.json();
+        setHoldTriggered(true);
+        setHoldReference(data.mock_reference);
+      }
     } catch (err) {
       console.error('Failed to trigger hold:', err);
     }
+  };
+
+  const toggleSpeaker = () => {
+    setSpeakerOn(prev => {
+      const next = !prev;
+      if (audioRef.current) {
+        audioRef.current.muted = !next;
+      }
+      return next;
+    });
   };
 
   return (
@@ -410,19 +516,33 @@ export default function MobileSimulatorPage() {
                       ? 'bg-rose-950/90 border-rose-500/80 shadow-rose-950/50 ring-2 ring-rose-500/40 animate-pulse'
                       : verdict === 'SUSPICIOUS'
                       ? 'bg-amber-950/90 border-amber-500/80 shadow-amber-950/50'
-                      : 'bg-slate-900/90 border-emerald-500/50 shadow-emerald-950/30'
+                      : verdict === 'REAL'
+                      ? 'bg-slate-900/90 border-emerald-500/50 shadow-emerald-950/30'
+                      : 'bg-slate-900/80 border-slate-700 shadow-slate-950/50'
                   }`}>
                     
                     {/* HUD Header */}
                     <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 mb-3">
                       <div className="flex items-center gap-1.5">
-                        <Shield className={`w-4 h-4 ${verdict === 'FRAUD' ? 'text-rose-400' : 'text-emerald-400'}`} />
+                        {verdict === 'FRAUD' ? (
+                          <ShieldAlert className="w-4 h-4 text-rose-400" />
+                        ) : verdict === 'SUSPICIOUS' ? (
+                          <ShieldAlert className="w-4 h-4 text-amber-400" />
+                        ) : (
+                          <Shield className="w-4 h-4 text-emerald-400" />
+                        )}
                         <span className="text-xs font-bold uppercase tracking-wider text-slate-200">VoiceShield In-Call HUD</span>
                       </div>
                       <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
-                        verdict === 'FRAUD' ? 'bg-rose-900 text-rose-200' : 'bg-emerald-900 text-emerald-200'
+                        verdict === 'FRAUD' 
+                          ? 'bg-rose-900 text-rose-200' 
+                          : verdict === 'SUSPICIOUS'
+                          ? 'bg-amber-900 text-amber-200'
+                          : verdict === 'REAL'
+                          ? 'bg-emerald-900 text-emerald-200'
+                          : 'bg-slate-800 text-slate-300'
                       }`}>
-                        {verdict}
+                        {verdict === 'FRAUD' ? 'CRITICAL FRAUD' : verdict === 'REAL' ? 'VERIFIED NATURAL' : verdict}
                       </span>
                     </div>
 
@@ -432,11 +552,13 @@ export default function MobileSimulatorPage() {
                         {(fusedRisk * 100).toFixed(1)}%
                       </div>
                       <span className="text-[11px] text-slate-300 font-medium">
-                        {verdict === 'FRAUD'
+                        {verdict === 'FRAUD' || threatCategory === 'AI_SYNTHETIC'
                           ? '🚨 CRITICAL: AI Voice Clone Impersonation'
-                          : verdict === 'SUSPICIOUS'
-                          ? '⚠️ Unnatural Spectral Phasing Detected'
-                          : '🟢 Verified Natural Human Speech'}
+                          : verdict === 'SUSPICIOUS' || threatCategory === 'HUMAN_VISHING'
+                          ? '⚠️ Unnatural Spectral Phasing / Vishing Detected'
+                          : verdict === 'REAL'
+                          ? '🟢 Verified Natural Human Speech'
+                          : '📡 Intercepting & Analyzing Audio Stream...'}
                       </span>
                     </div>
 
@@ -459,12 +581,12 @@ export default function MobileSimulatorPage() {
                           disabled={holdTriggered}
                           className={`w-full py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all ${
                             holdTriggered
-                              ? 'bg-emerald-600 text-white'
+                              ? 'bg-emerald-600 text-white cursor-default'
                               : 'bg-rose-600 hover:bg-rose-500 text-white animate-bounce'
                           }`}
                         >
                           <Lock className="w-4 h-4" />
-                          {holdTriggered ? 'Banking & UPI Frozen (Safe)' : 'Freeze Banking Sessions'}
+                          {holdTriggered ? 'Banking & UPI Frozen (Protected)' : 'Freeze Banking Sessions'}
                         </button>
                         {holdReference && (
                           <div className="text-[10px] font-mono text-emerald-300 bg-emerald-950/80 py-1 px-2 rounded border border-emerald-800/60">
@@ -478,22 +600,22 @@ export default function MobileSimulatorPage() {
                   {/* Standard In-Call Dialpad Controls */}
                   <div className="grid grid-cols-3 gap-3 my-2 text-slate-400 text-xs">
                     <button 
-                      onClick={() => setIsMuted(!isMuted)} 
-                      className={`p-3 rounded-full flex flex-col items-center gap-1 ${isMuted ? 'bg-rose-900/60 text-rose-300' : 'bg-slate-800 hover:bg-slate-700'}`}
+                      onClick={() => setIsMuted(m => !m)} 
+                      className={`p-3 rounded-full flex flex-col items-center gap-1 transition-all ${isMuted ? 'bg-rose-900/60 text-rose-300 ring-1 ring-rose-500' : 'bg-slate-800 hover:bg-slate-700'}`}
                     >
                       {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                      <span className="text-[9px]">Mute</span>
+                      <span className="text-[9px]">{isMuted ? 'Muted' : 'Mute'}</span>
                     </button>
                     <button 
-                      onClick={() => setSpeakerOn(!speakerOn)}
-                      className={`p-3 rounded-full flex flex-col items-center gap-1 ${speakerOn ? 'bg-emerald-900/60 text-emerald-300' : 'bg-slate-800 hover:bg-slate-700'}`}
+                      onClick={toggleSpeaker}
+                      className={`p-3 rounded-full flex flex-col items-center gap-1 transition-all ${speakerOn ? 'bg-emerald-900/60 text-emerald-300 ring-1 ring-emerald-500' : 'bg-slate-800 hover:bg-slate-700'}`}
                     >
                       <Volume2 className="w-5 h-5" />
-                      <span className="text-[9px]">Speaker</span>
+                      <span className="text-[9px]">{speakerOn ? 'Speaker On' : 'Speaker Off'}</span>
                     </button>
                     <button 
                       onClick={handleManualHold}
-                      className={`p-3 rounded-full flex flex-col items-center gap-1 ${isFrozen ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 hover:bg-slate-700'}`}
+                      className={`p-3 rounded-full flex flex-col items-center gap-1 transition-all ${isFrozen ? 'bg-emerald-900 text-emerald-300 ring-1 ring-emerald-500' : 'bg-slate-800 hover:bg-slate-700'}`}
                     >
                       <Lock className="w-5 h-5" />
                       <span className="text-[9px]">Hold Bank</span>
@@ -521,14 +643,29 @@ export default function MobileSimulatorPage() {
                   <h3 className="text-lg font-bold text-slate-200 mb-1">Call Terminated</h3>
                   <p className="text-xs text-slate-500 mb-4 font-mono">Duration: {formatDuration(callDuration)}</p>
                   
-                  {callId && (
-                    <Link
-                      href={`/evidence?call_id=${callId}`}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition-all"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> View BSA §63 Forensic Log
-                    </Link>
+                  {verdict === 'FRAUD' && (
+                    <div className="mb-4 px-3 py-1.5 rounded-lg bg-rose-950/80 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                      <span>AI Cloned Extortion Call Neutralized</span>
+                    </div>
                   )}
+
+                  <div className="flex flex-col gap-2 w-full max-w-[240px]">
+                    {callId && (
+                      <Link
+                        href={`/evidence?call_id=${callId}`}
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition-all"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> View BSA §63 Forensic Log
+                      </Link>
+                    )}
+                    <button
+                      onClick={() => setCallState('ringing')}
+                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all border border-slate-700"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Simulate Another Call
+                    </button>
+                  </div>
                 </div>
               )}
 

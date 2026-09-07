@@ -56,3 +56,6 @@ test_*.db
 
 # Design reference (Stitch export) — local only, never publish
 /Google Stitch/
+
+# Presentations (local decks)
+*.pptx

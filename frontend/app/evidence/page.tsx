@@ -17,7 +17,7 @@ interface EvidenceEntry {
 }
 interface EvidenceResponse { call_id: string; chain_valid: boolean; signatures_valid: boolean; public_key: string; entry_count: number; entries: EvidenceEntry[]; }
 
-const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { hour12: false });
+const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
 const trunc = (h: string) => (h ? `${h.slice(0, 12)}…${h.slice(-8)}` : '—');
 
 export default function EvidenceStation() {

@@ -42,10 +42,20 @@ function useBackendStatus() {
   return { status, model };
 }
 
-function useUtcClock() {
+function useIstClock() {
   const [now, setNow] = useState<string>('--:--:--');
   useEffect(() => {
-    const tick = () => setNow(new Date().toISOString().slice(11, 19));
+    const tick = () => {
+      setNow(
+        new Date().toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      );
+    };
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
@@ -56,7 +66,7 @@ function useUtcClock() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { status, model } = useBackendStatus();
-  const utc = useUtcClock();
+  const ist = useIstClock();
 
   const posture =
     status === 'online' ? { label: 'System Nominal — Backend Connected', dot: 'bg-risk-low' }
@@ -137,8 +147,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 mono text-data text-navy border-r border-line pr-4">
-              <span className="eyebrow">UTC</span>
-              <span>{utc}</span>
+              <span className="eyebrow">IST</span>
+              <span>{ist}</span>
             </div>
             <ThemeToggle />
           </div>

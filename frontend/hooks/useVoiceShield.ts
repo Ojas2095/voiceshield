@@ -177,7 +177,14 @@ export function useVoiceShield() {
           setRiskHistory((prev) => [...prev, risk].slice(-HISTORY_LEN));
           if (msg.verdict && msg.verdict !== 'WAITING') {
             setLogs((prev) =>
-              [{ t: new Date().toLocaleTimeString(), risk, verdict: msg.verdict }, ...prev].slice(0, 12),
+              [
+                {
+                  t: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }),
+                  risk,
+                  verdict: msg.verdict,
+                },
+                ...prev,
+              ].slice(0, 12),
             );
           }
           break;
@@ -189,7 +196,10 @@ export function useVoiceShield() {
           setHold({
             reference: msg.mock_reference ?? 'VS-HOLD',
             risk: data.riskScore || 85,
-            at: new Date(msg.triggered_at ?? Date.now()).toLocaleTimeString(),
+            at: new Date(msg.triggered_at ?? Date.now()).toLocaleTimeString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              hour12: false,
+            }),
           });
           break;
         case 'error':

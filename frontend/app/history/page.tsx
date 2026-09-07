@@ -19,7 +19,7 @@ const statusPill: Record<string, string> = {
 };
 const railColor: Record<string, string> = { active: 'bg-brand', ended: 'bg-line', held: 'bg-risk-high' };
 
-const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { hour12: false });
+const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
 const dur = (c: CallRecord) => {
   if (!c.ended_at || !c.started_at) return '—';
   const diff = Math.round((+new Date(c.ended_at) - +new Date(c.started_at)) / 1000);
